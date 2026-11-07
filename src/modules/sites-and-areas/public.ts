@@ -27,9 +27,11 @@ export interface NearbySite {
   readonly band: FreeSpaceBand;
 }
 
+/** One value a site's capacity has had, from the moment set by the server clock, with who set it and why. */
 export interface CapacityChange {
   readonly capacity: number;
   readonly reason: string;
+  readonly changedBy: PersonId;
   readonly changedAt: string;
 }
 
@@ -55,7 +57,8 @@ export type PlaceRefusal =
   | 'unknown site'
   | 'invalid label'
   | 'invalid outline'
-  | 'invalid capacity';
+  | 'invalid capacity'
+  | 'reason required';
 
 /** A site with where it sits and its current capacity (the latest row of its capacity history). */
 export interface SiteDetails {
@@ -78,6 +81,10 @@ export interface SiteRegistry extends SiteCodes, SiteLocator {
   relabelZone(actor: PersonId, zoneId: ZoneId, label: string): Promise<Result<void, PlaceRefusal>>;
   createSite(actor: PersonId, zoneId: ZoneId, label: string, outline: readonly GeoPoint[], capacity: number): Promise<Result<SiteId, PlaceRefusal>>;
   replaceSiteOutline(actor: PersonId, siteId: SiteId, outline: readonly GeoPoint[]): Promise<Result<void, PlaceRefusal>>;
+  /** A new capacity with a mandatory reason (task A8); the old value stays in the history. */
+  changeCapacity(actor: PersonId, siteId: SiteId, capacity: number, reason: string): Promise<Result<void, PlaceRefusal>>;
+  /** Every capacity the site has had, oldest first. */
+  capacityHistory(siteId: SiteId): Promise<readonly CapacityChange[]>;
   districtExists(districtId: DistrictId): Promise<boolean>;
   siteDetails(siteId: SiteId): Promise<SiteDetails | undefined>;
   /** The current number of spaces; ticketing computes free spaces from this and its open tickets. */

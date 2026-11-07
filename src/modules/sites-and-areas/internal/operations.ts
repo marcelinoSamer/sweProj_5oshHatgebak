@@ -20,7 +20,9 @@ export function createSitesOperations(registry: SiteRegistry): readonly Operatio
     relabelZone(registry),
     createSite(registry),
     replaceSiteOutline(registry),
+    changeCapacity(registry),
     readSiteDetails(registry),
+    readCapacityHistory(registry),
   ];
 }
 
@@ -144,6 +146,48 @@ function replaceSiteOutline(registry: SiteRegistry): WriteOperation {
   };
 }
 
+function changeCapacity(registry: SiteRegistry): WriteOperation {
+  return {
+    kind: 'write',
+    name: 'sites.changeCapacity',
+    method: 'POST',
+    path: '/sites/capacity',
+    allowedRoles: ['member', 'chair'],
+    bodySchema: { fields: { siteId: 'string', capacity: 'number', reason: 'string' } },
+    examples: { valid: { siteId: 'site-1', capacity: 8, reason: 'Two spaces repainted' }, invalid: { siteId: 'site-1', capacity: 8 } },
+    async handle({ actor, body }) {
+      const siteId = String(body['siteId']);
+      const reason = String(body['reason']);
+      const changed = await registry.changeCapacity(actor.personId, siteId, Number(body['capacity']), reason);
+      if (!changed.ok) {
+        return refused(changed.error);
+      }
+      const districtId = (await registry.locateSite(siteId))?.districtId;
+      return {
+        response: respond(200, { siteId, capacity: await registry.capacityOf(siteId) }),
+        audit: districtId === undefined ? { reason } : { reason, districtId },
+      };
+    },
+  };
+}
+
+function readCapacityHistory(registry: SiteRegistry): ReadOperation {
+  return {
+    kind: 'read',
+    name: 'sites.capacityHistory',
+    method: 'GET',
+    path: '/sites/capacity-history',
+    allowedRoles: ['inspector', 'member', 'chair'],
+    async handle({ query }) {
+      const siteId = query['siteId'] ?? '';
+      if ((await registry.locateSite(siteId)) === undefined) {
+        return refuse(404, 'unknown site');
+      }
+      return respond(200, { siteId, history: await registry.capacityHistory(siteId) });
+    },
+  };
+}
+
 function readSiteDetails(registry: SiteRegistry): ReadOperation {
   return {
     kind: 'read',
@@ -177,6 +221,7 @@ const REFUSAL_STATUS: Readonly<Record<PlaceRefusal, number>> = {
   'invalid label': 400,
   'invalid outline': 400,
   'invalid capacity': 400,
+  'reason required': 400,
 };
 
 function refused(refusal: PlaceRefusal): WriteOutcome {

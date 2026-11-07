@@ -26,6 +26,7 @@ export interface Site {
 const MAXIMUM_LABEL_LENGTH = 80;
 const MINIMUM_OUTLINE_POINTS = 3;
 const MAXIMUM_CAPACITY = 10_000;
+const MAXIMUM_REASON_LENGTH = 500;
 
 export function validLabel(label: string): Result<string, 'invalid label'> {
   const trimmed = label.trim().replace(/\s+/g, ' ');
@@ -47,6 +48,12 @@ export function validOutline(outline: readonly GeoPoint[]): Result<readonly GeoP
 /** A whole number of spaces from 1 to 10,000. */
 export function validCapacity(capacity: number): Result<number, 'invalid capacity'> {
   return Number.isInteger(capacity) && capacity >= 1 && capacity <= MAXIMUM_CAPACITY ? succeed(capacity) : fail('invalid capacity');
+}
+
+/** A reason is mandatory for a change the committee must be able to explain later (ADR-10). */
+export function validReason(reason: string): Result<string, 'reason required'> {
+  const trimmed = reason.trim();
+  return trimmed === '' || trimmed.length > MAXIMUM_REASON_LENGTH ? fail('reason required') : succeed(trimmed);
 }
 
 /** The point used for distances: the average of the outline's corners, close enough for sites a few hundred metres wide. */

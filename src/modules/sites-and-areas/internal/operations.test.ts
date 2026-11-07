@@ -8,7 +8,7 @@ import { REQUEST_ID_HEADER } from '../../../shared/request-id';
 import { looksLikeTimestampKey } from '../../../shared/timestamp-fields';
 import { createSitesOperations } from '../public';
 import { parseOutline } from './operations';
-import { createRegistryWorld, createStaff, valueOf, type RegistryWorld } from './testing/registry-world';
+import { createRegistryWorld, createStaff, squareAround, valueOf, type RegistryWorld } from './testing/registry-world';
 
 /** The registry's requests through the real entry point: token, role, request id, body, one audit entry per write. */
 let world: RegistryWorld;
@@ -84,5 +84,16 @@ describe('A6 through the entry point', () => {
   it('declares no timestamp field in any write body (fitness function F11 for this module)', () => {
     const fields = application.registry.writes().flatMap((operation) => Object.keys(operation.bodySchema.fields));
     expect(fields.filter(looksLikeTimestampKey)).toEqual([]);
+  });
+
+  it('changes capacity with the reason in the audit entry, and refuses a change without one', async () => {
+    const zoneId = valueOf(await world.registry.createZone(world.chair, districtOne, 'Zamalek zone 1'));
+    const siteId = valueOf(await world.registry.createSite(world.chair, zoneId, '26 July Street', squareAround(30.0626, 31.2197), 5));
+    const withoutReason = await application.handle(post('/sites/capacity', memberOfDistrictOne, 'member', { siteId, capacity: 8, reason: ' ' }));
+    expect(withoutReason).toEqual({ status: 400, body: { error: 'reason required' } });
+    const changed = await application.handle(post('/sites/capacity', memberOfDistrictOne, 'member', { siteId, capacity: 8, reason: 'Two spaces repainted' }));
+    expect(changed).toEqual({ status: 200, body: { siteId, capacity: 8 } });
+    const entries = await application.audit.readByScope({ personId: memberOfDistrictOne, role: 'member', districtId: districtOne });
+    expect(entries.map((entry) => [entry.operation, entry.reason])).toEqual([['sites.changeCapacity', 'Two spaces repainted']]);
   });
 });

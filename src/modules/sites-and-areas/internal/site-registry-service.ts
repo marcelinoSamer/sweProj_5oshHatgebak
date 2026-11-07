@@ -3,8 +3,8 @@ import type { Clock } from '../../../shared/clock';
 import type { DistrictId, PersonId, SiteId, ZoneId } from '../../../shared/identifiers';
 import { fail, succeed, type Result } from '../../../shared/result';
 import type { Authorization, Scope } from '../../accounts-and-access-control/public';
-import type { GeoPoint, PlaceRefusal, SiteCodeRefusal, SiteDetails, SiteRegistry } from '../public';
-import { validCapacity, validLabel, validOutline } from './domain/places';
+import type { CapacityChange, GeoPoint, PlaceRefusal, SiteCodeRefusal, SiteDetails, SiteRegistry } from '../public';
+import { validCapacity, validLabel, validOutline, validReason } from './domain/places';
 import { PlacesLocator } from './places-locator';
 import type { CapacityStore, PlacesStore } from './ports';
 import type { SiteCodesService } from './site-codes-service';
@@ -132,6 +132,36 @@ export class SiteRegistryService implements SiteRegistry {
     }
     await this.dependencies.places.replaceOutline(siteId, checkedOutline.value);
     return succeed(undefined);
+  }
+
+  async changeCapacity(actor: PersonId, siteId: SiteId, capacity: number, reason: string): Promise<Result<void, PlaceRefusal>> {
+    const checkedReason = validReason(reason);
+    if (!checkedReason.ok) {
+      return checkedReason;
+    }
+    const checkedCapacity = validCapacity(capacity);
+    if (!checkedCapacity.ok) {
+      return checkedCapacity;
+    }
+    if ((await this.dependencies.places.site(siteId)) === undefined) {
+      return fail('unknown site');
+    }
+    if (!(await this.permitted(actor, 'sites.changeCapacity', { siteId }))) {
+      return fail('not allowed here');
+    }
+    await this.dependencies.capacity.append({
+      siteId,
+      capacity: checkedCapacity.value,
+      reason: checkedReason.value,
+      changedBy: actor,
+      changedAt: this.dependencies.clock.now().toISOString(),
+    });
+    return succeed(undefined);
+  }
+
+  async capacityHistory(siteId: SiteId): Promise<readonly CapacityChange[]> {
+    const history = await this.dependencies.capacity.historyOf(siteId);
+    return history.map(({ capacity, reason, changedBy, changedAt }) => ({ capacity, reason, changedBy, changedAt }));
   }
 
   async districtExists(districtId: DistrictId): Promise<boolean> {

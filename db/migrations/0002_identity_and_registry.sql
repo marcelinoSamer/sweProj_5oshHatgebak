@@ -80,13 +80,15 @@ CREATE TABLE IF NOT EXISTS sites_and_areas.sites (
 -- Every capacity a site has ever had, with the reason and the server time (task A8). Insert-only: the latest row is
 -- the current capacity.
 CREATE TABLE IF NOT EXISTS sites_and_areas.capacity_changes (
+  change_id  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   site_id    text NOT NULL REFERENCES sites_and_areas.sites (site_id),
   capacity   integer NOT NULL CHECK (capacity BETWEEN 1 AND 10000),
   reason     text NOT NULL CHECK (length(trim(reason)) > 0),
   changed_by text NOT NULL,
-  changed_at timestamptz NOT NULL,
-  PRIMARY KEY (site_id, changed_at)
+  changed_at timestamptz NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS capacity_changes_site_idx ON sites_and_areas.capacity_changes (site_id, change_id);
 
 GRANT SELECT, INSERT, UPDATE ON sites_and_areas.districts, sites_and_areas.zones, sites_and_areas.sites TO sayes_application;
 GRANT SELECT, INSERT ON sites_and_areas.capacity_changes TO sayes_application;
