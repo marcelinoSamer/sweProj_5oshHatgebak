@@ -21,6 +21,8 @@ export interface StoredPayment extends PaymentRecord {
 export interface PaymentStore {
   add(payment: StoredPayment): Promise<void>;
   forTicket(ticketId: TicketId): Promise<readonly StoredPayment[]>;
+  /** The row a request id already created, if any: a repeat must find it before the provider is called (C3). */
+  byRequestId(requestId: RequestId): Promise<StoredPayment | undefined>;
 }
 
 /**

@@ -32,6 +32,10 @@ export interface PaymentLedgerDependencies {
  * The payments ledger for one unit of work (task C2). Paying in the app: ask Ticketing for the ticket, charge the
  * provider with the request id as the idempotency key, record the answer as a new row, mark the ticket paid and
  * publish "ticket paid". The row, the ticket status, the audit entry and the event commit together (Rule E).
+ *
+ * One charge per request id (task C3) holds at two levels: the entry point answers a repeat from its stored
+ * response without calling the ledger, and the ledger itself answers from the row the id already created, so even
+ * a caller that bypasses the entry point cannot charge the provider twice for one id.
  */
 export class PaymentLedgerService implements PaymentLedger {
   constructor(
@@ -41,6 +45,10 @@ export class PaymentLedgerService implements PaymentLedger {
   ) {}
 
   async payInApp(requestId: RequestId, ticketId: TicketId, payer: PersonId): Promise<Result<PaymentRecord, PayRefusal>> {
+    const alreadyRecorded = await this.store.byRequestId(requestId);
+    if (alreadyRecorded !== undefined) {
+      return succeed(toRecord(alreadyRecorded));
+    }
     const ticket = await this.dependencies.ticketQuery.ticketStatus(ticketId);
     if (ticket.driverRef !== payer) {
       return fail('not your ticket');

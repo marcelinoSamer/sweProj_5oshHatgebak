@@ -1,5 +1,6 @@
 import type { TableAccess } from '../../../../adapters/in-memory/in-memory-database';
 import type { TicketId } from '../../../../shared/identifiers';
+import type { RequestId } from '../../../../shared/request-id';
 import type { UnitOfWork } from '../../../../shared/unit-of-work';
 import type { PaymentStore, PaymentStores, StoredPayment } from '../ports';
 
@@ -19,6 +20,10 @@ export class InMemoryPaymentStore implements PaymentStore {
 
   async forTicket(ticketId: TicketId): Promise<readonly StoredPayment[]> {
     return this.access.rows<StoredPayment>(PAYMENTS_TABLE).filter((payment) => payment.ticketId === ticketId);
+  }
+
+  async byRequestId(requestId: RequestId): Promise<StoredPayment | undefined> {
+    return this.access.rows<StoredPayment>(PAYMENTS_TABLE).find((payment) => payment.requestId === requestId);
   }
 }
 
