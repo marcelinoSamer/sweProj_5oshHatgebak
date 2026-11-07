@@ -1,6 +1,7 @@
 import type { DistrictId, PersonId, SiteId, ZoneId } from '../../../shared/identifiers';
-import type { GeoPoint } from '../public';
+import type { GeoPoint, OpeningPeriod } from '../public';
 import type { District, Site, Zone } from './domain/places';
+import type { SpecialEvent } from './domain/site-calendar';
 
 /**
  * Storage ports owned by this module. The in-memory adapters in `adapters/` implement them for every test; the
@@ -34,4 +35,19 @@ export interface CapacityChangeRow {
 export interface CapacityStore {
   append(change: CapacityChangeRow): Promise<void>;
   historyOf(siteId: SiteId): Promise<readonly CapacityChangeRow[]>;
+}
+
+/** A declared closure or free period, with who declared it and when by the server clock. */
+export interface SpecialEventRow extends SpecialEvent {
+  readonly siteId: SiteId;
+  readonly declaredBy: PersonId;
+  readonly declaredAt: string;
+}
+
+/** The `sites_and_areas.opening_hours` and `special_events` tables. */
+export interface SiteCalendarStore {
+  weeklyHours(siteId: SiteId): Promise<readonly OpeningPeriod[] | undefined>;
+  replaceWeeklyHours(siteId: SiteId, periods: readonly OpeningPeriod[]): Promise<void>;
+  addEvent(event: SpecialEventRow): Promise<void>;
+  eventsOf(siteId: SiteId): Promise<readonly SpecialEventRow[]>;
 }

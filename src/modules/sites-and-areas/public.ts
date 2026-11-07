@@ -6,10 +6,10 @@ import type { Clock } from '../../shared/clock';
 import type { DistrictId, PersonId, SiteId, ZoneId } from '../../shared/identifiers';
 import type { Result } from '../../shared/result';
 import type { Authorization, SiteLocator } from '../accounts-and-access-control/public';
-import { InMemoryCapacityStore, InMemoryPlacesStore } from './internal/adapters/in-memory-stores';
+import { InMemoryCapacityStore, InMemoryPlacesStore, InMemorySiteCalendarStore } from './internal/adapters/in-memory-stores';
 import { SiteCodeSigner } from './internal/domain/site-code-signer';
 import { PlacesLocator } from './internal/places-locator';
-import type { CapacityStore, PlacesStore } from './internal/ports';
+import type { CapacityStore, PlacesStore, SiteCalendarStore } from './internal/ports';
 import { SiteCodesService } from './internal/site-codes-service';
 import { SiteRegistryService } from './internal/site-registry-service';
 
@@ -58,7 +58,35 @@ export type PlaceRefusal =
   | 'invalid label'
   | 'invalid outline'
   | 'invalid capacity'
-  | 'reason required';
+  | 'reason required'
+  | 'invalid hours'
+  | 'invalid period';
+
+/** One opening period on one weekday (0 Sunday … 6 Saturday), in minutes after local midnight in Cairo. */
+export interface OpeningPeriod {
+  readonly weekday: number;
+  readonly opensMinute: number;
+  /** Exclusive; at most 1440, midnight at the end of the day. */
+  readonly closesMinute: number;
+}
+
+/** A wall-clock date and time in Cairo, as the committee declares it; never a phone's clock reading. */
+export interface LocalDateTime {
+  readonly year: number;
+  readonly month: number;
+  readonly day: number;
+  readonly hour: number;
+  readonly minute: number;
+}
+
+export type SpecialEventKind = 'closure' | 'free period';
+
+/** Open or closed at one moment, free of charge or not, and why. */
+export interface SiteStatus {
+  readonly open: boolean;
+  readonly free: boolean;
+  readonly reason: string;
+}
 
 /** A site with where it sits and its current capacity (the latest row of its capacity history). */
 export interface SiteDetails {
@@ -85,6 +113,21 @@ export interface SiteRegistry extends SiteCodes, SiteLocator {
   changeCapacity(actor: PersonId, siteId: SiteId, capacity: number, reason: string): Promise<Result<void, PlaceRefusal>>;
   /** Every capacity the site has had, oldest first. */
   capacityHistory(siteId: SiteId): Promise<readonly CapacityChange[]>;
+  /** Replaces the weekly opening hours; a site with none declared is open around the clock (task A9). */
+  setWeeklyHours(actor: PersonId, siteId: SiteId, periods: readonly OpeningPeriod[]): Promise<Result<void, PlaceRefusal>>;
+  /** Declares a closure or a free period, from one local minute until another, with a mandatory reason. */
+  declareSpecialEvent(
+    actor: PersonId,
+    siteId: SiteId,
+    kind: SpecialEventKind,
+    from: LocalDateTime,
+    until: LocalDateTime,
+    reason: string,
+  ): Promise<Result<string, PlaceRefusal>>;
+  /** Ticketing asks with the server clock's moment; an unknown site is closed. */
+  isOpenAt(siteId: SiteId, moment: Date): Promise<boolean>;
+  /** undefined for an unknown site. */
+  statusAt(siteId: SiteId, moment: Date): Promise<SiteStatus | undefined>;
   districtExists(districtId: DistrictId): Promise<boolean>;
   siteDetails(siteId: SiteId): Promise<SiteDetails | undefined>;
   /** The current number of spaces; ticketing computes free spaces from this and its open tickets. */
@@ -102,6 +145,7 @@ export function createSiteCodes(secret: string): SiteCodes {
 export interface SitesAndAreasStores {
   readonly places: PlacesStore;
   readonly capacity: CapacityStore;
+  readonly calendar: SiteCalendarStore;
 }
 
 export interface SitesAndAreasDependencies {
@@ -117,6 +161,7 @@ export function createSiteRegistry(dependencies: SitesAndAreasDependencies): Sit
   return new SiteRegistryService({
     places: stores.places,
     capacity: stores.capacity,
+    calendar: stores.calendar,
     authorization,
     codes: new SiteCodesService(new SiteCodeSigner(siteCodeSecret)),
     clock,
@@ -132,7 +177,7 @@ export function createSiteLocator(stores: SitesAndAreasStores): SiteLocator {
 }
 
 export function createInMemorySitesStores(): SitesAndAreasStores {
-  return { places: new InMemoryPlacesStore(), capacity: new InMemoryCapacityStore() };
+  return { places: new InMemoryPlacesStore(), capacity: new InMemoryCapacityStore(), calendar: new InMemorySiteCalendarStore() };
 }
 
 export { createSitesOperations } from './internal/operations';

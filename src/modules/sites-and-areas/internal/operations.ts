@@ -1,8 +1,10 @@
 import { refuse, respond } from '../../../entrypoint/http';
 import type { Operation, ReadOperation, WriteOperation, WriteOutcome } from '../../../entrypoint/operations/operation';
+import type { Clock } from '../../../shared/clock';
 import type { DistrictId } from '../../../shared/identifiers';
 import { fail, succeed, type Result } from '../../../shared/result';
 import type { GeoPoint, PlaceRefusal, SiteRegistry } from '../public';
+import { parseWeeklyHours } from './domain/site-calendar';
 
 /**
  * The requests this module answers, for the composition root to register. The entry point checks the token, the
@@ -12,7 +14,7 @@ import type { GeoPoint, PlaceRefusal, SiteRegistry } from '../public';
  * The request-body schema has no list type yet, so an outline travels as text: "latitude,longitude" pairs separated
  * by semicolons, for example "30.0624,31.2195;30.0624,31.2199;30.0628,31.2199".
  */
-export function createSitesOperations(registry: SiteRegistry): readonly Operation[] {
+export function createSitesOperations(registry: SiteRegistry, clock: Clock): readonly Operation[] {
   return [
     createDistrict(registry),
     relabelDistrict(registry),
@@ -21,7 +23,9 @@ export function createSitesOperations(registry: SiteRegistry): readonly Operatio
     createSite(registry),
     replaceSiteOutline(registry),
     changeCapacity(registry),
+    setWeeklyHours(registry),
     readSiteDetails(registry),
+    readSiteStatus(registry, clock),
     readCapacityHistory(registry),
   ];
 }
@@ -171,6 +175,47 @@ function changeCapacity(registry: SiteRegistry): WriteOperation {
   };
 }
 
+/**
+ * Weekly hours travel as text, for example "sun-thu 08:00-22:00; fri 13:00-23:00". Declaring a special event has no
+ * request yet: its start and end are dates, and the entry point's server-clock rule refuses any date in a body
+ * (question 9 for the foundation owner).
+ */
+function setWeeklyHours(registry: SiteRegistry): WriteOperation {
+  return {
+    kind: 'write',
+    name: 'sites.setWeeklyHours',
+    method: 'POST',
+    path: '/sites/hours',
+    allowedRoles: ['member', 'chair'],
+    bodySchema: { fields: { siteId: 'string', hours: 'string' } },
+    examples: { valid: { siteId: 'site-1', hours: 'daily 08:00-23:00' }, invalid: { siteId: 'site-1' } },
+    async handle({ actor, body }) {
+      const periods = parseWeeklyHours(String(body['hours']));
+      if (!periods.ok) {
+        return refused(periods.error);
+      }
+      const siteId = String(body['siteId']);
+      const set = await registry.setWeeklyHours(actor.personId, siteId, periods.value);
+      return set.ok ? written(200, { siteId }, (await registry.locateSite(siteId))?.districtId) : refused(set.error);
+    },
+  };
+}
+
+/** Open or closed now, by the server clock: the moment is never taken from the request. */
+function readSiteStatus(registry: SiteRegistry, clock: Clock): ReadOperation {
+  return {
+    kind: 'read',
+    name: 'sites.statusNow',
+    method: 'GET',
+    path: '/sites/status',
+    allowedRoles: ['driver', 'attendant', 'inspector', 'member', 'chair'],
+    async handle({ query }) {
+      const status = await registry.statusAt(query['siteId'] ?? '', clock.now());
+      return status === undefined ? refuse(404, 'unknown site') : respond(200, status);
+    },
+  };
+}
+
 function readCapacityHistory(registry: SiteRegistry): ReadOperation {
   return {
     kind: 'read',
@@ -222,6 +267,8 @@ const REFUSAL_STATUS: Readonly<Record<PlaceRefusal, number>> = {
   'invalid outline': 400,
   'invalid capacity': 400,
   'reason required': 400,
+  'invalid hours': 400,
+  'invalid period': 400,
 };
 
 function refused(refusal: PlaceRefusal): WriteOutcome {

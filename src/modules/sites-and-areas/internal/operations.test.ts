@@ -30,7 +30,7 @@ function post(path: string, personId: PersonId, role: Role, body: unknown, reque
 
 beforeEach(async () => {
   world = await createRegistryWorld();
-  application = composeInMemoryApplication({ tokenSecret: TEST_TOKEN_SECRET, operations: createSitesOperations(world.registry) });
+  application = composeInMemoryApplication({ tokenSecret: TEST_TOKEN_SECRET, operations: createSitesOperations(world.registry, world.clock) });
   districtOne = valueOf(await world.registry.createDistrict(world.chair, 'Zamalek'));
   memberOfDistrictOne = await createStaff(world, 'member');
   await world.accounts.accessFacts.recordMemberDistrict(memberOfDistrictOne, districtOne);

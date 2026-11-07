@@ -3,15 +3,28 @@ import type { Clock } from '../../../shared/clock';
 import type { DistrictId, PersonId, SiteId, ZoneId } from '../../../shared/identifiers';
 import { fail, succeed, type Result } from '../../../shared/result';
 import type { Authorization, Scope } from '../../accounts-and-access-control/public';
-import type { CapacityChange, GeoPoint, PlaceRefusal, SiteCodeRefusal, SiteDetails, SiteRegistry } from '../public';
+import type {
+  CapacityChange,
+  GeoPoint,
+  LocalDateTime,
+  OpeningPeriod,
+  PlaceRefusal,
+  SiteCodeRefusal,
+  SiteDetails,
+  SiteRegistry,
+  SiteStatus,
+  SpecialEventKind,
+} from '../public';
 import { validCapacity, validLabel, validOutline, validReason } from './domain/places';
+import { statusAt, validEventPeriod, validWeeklyHours } from './domain/site-calendar';
 import { PlacesLocator } from './places-locator';
-import type { CapacityStore, PlacesStore } from './ports';
+import type { CapacityStore, PlacesStore, SiteCalendarStore } from './ports';
 import type { SiteCodesService } from './site-codes-service';
 
 export interface SiteRegistryDependencies {
   readonly places: PlacesStore;
   readonly capacity: CapacityStore;
+  readonly calendar: SiteCalendarStore;
   readonly authorization: Authorization;
   readonly codes: SiteCodesService;
   readonly clock: Clock;
@@ -162,6 +175,69 @@ export class SiteRegistryService implements SiteRegistry {
   async capacityHistory(siteId: SiteId): Promise<readonly CapacityChange[]> {
     const history = await this.dependencies.capacity.historyOf(siteId);
     return history.map(({ capacity, reason, changedBy, changedAt }) => ({ capacity, reason, changedBy, changedAt }));
+  }
+
+  async setWeeklyHours(actor: PersonId, siteId: SiteId, periods: readonly OpeningPeriod[]): Promise<Result<void, PlaceRefusal>> {
+    const checkedHours = validWeeklyHours(periods);
+    if (!checkedHours.ok) {
+      return checkedHours;
+    }
+    if ((await this.dependencies.places.site(siteId)) === undefined) {
+      return fail('unknown site');
+    }
+    if (!(await this.permitted(actor, 'sites.setWeeklyHours', { siteId }))) {
+      return fail('not allowed here');
+    }
+    await this.dependencies.calendar.replaceWeeklyHours(siteId, checkedHours.value);
+    return succeed(undefined);
+  }
+
+  async declareSpecialEvent(
+    actor: PersonId,
+    siteId: SiteId,
+    kind: SpecialEventKind,
+    from: LocalDateTime,
+    until: LocalDateTime,
+    reason: string,
+  ): Promise<Result<string, PlaceRefusal>> {
+    const checkedReason = validReason(reason);
+    if (!checkedReason.ok) {
+      return checkedReason;
+    }
+    const checkedPeriod = validEventPeriod(from, until);
+    if (!checkedPeriod.ok) {
+      return checkedPeriod;
+    }
+    if ((await this.dependencies.places.site(siteId)) === undefined) {
+      return fail('unknown site');
+    }
+    if (!(await this.permitted(actor, 'sites.declareSpecialEvent', { siteId }))) {
+      return fail('not allowed here');
+    }
+    const eventId = `event-${randomUUID()}`;
+    await this.dependencies.calendar.addEvent({
+      eventId,
+      siteId,
+      kind,
+      from,
+      until,
+      reason: checkedReason.value,
+      declaredBy: actor,
+      declaredAt: this.dependencies.clock.now().toISOString(),
+    });
+    return succeed(eventId);
+  }
+
+  async isOpenAt(siteId: SiteId, moment: Date): Promise<boolean> {
+    return (await this.statusAt(siteId, moment))?.open ?? false;
+  }
+
+  async statusAt(siteId: SiteId, moment: Date): Promise<SiteStatus | undefined> {
+    if ((await this.dependencies.places.site(siteId)) === undefined) {
+      return undefined;
+    }
+    const [weeklyHours, events] = await Promise.all([this.dependencies.calendar.weeklyHours(siteId), this.dependencies.calendar.eventsOf(siteId)]);
+    return statusAt(moment, weeklyHours, events);
   }
 
   async districtExists(districtId: DistrictId): Promise<boolean> {

@@ -1,7 +1,7 @@
 import type { DistrictId, SiteId, ZoneId } from '../../../../shared/identifiers';
-import type { GeoPoint } from '../../public';
+import type { GeoPoint, OpeningPeriod } from '../../public';
 import type { District, Site, Zone } from '../domain/places';
-import type { CapacityChangeRow, CapacityStore, PlacesStore } from '../ports';
+import type { CapacityChangeRow, CapacityStore, PlacesStore, SiteCalendarStore, SpecialEventRow } from '../ports';
 
 /** In-memory stand-ins for this module's tables, used by every test. */
 export class InMemoryPlacesStore implements PlacesStore {
@@ -59,6 +59,27 @@ export class InMemoryCapacityStore implements CapacityStore {
 
   async historyOf(siteId: SiteId): Promise<readonly CapacityChangeRow[]> {
     return this.changes.filter((change) => change.siteId === siteId);
+  }
+}
+
+export class InMemorySiteCalendarStore implements SiteCalendarStore {
+  private readonly hours = new Map<SiteId, readonly OpeningPeriod[]>();
+  private readonly events: SpecialEventRow[] = [];
+
+  async weeklyHours(siteId: SiteId): Promise<readonly OpeningPeriod[] | undefined> {
+    return this.hours.get(siteId);
+  }
+
+  async replaceWeeklyHours(siteId: SiteId, periods: readonly OpeningPeriod[]): Promise<void> {
+    this.hours.set(siteId, periods);
+  }
+
+  async addEvent(event: SpecialEventRow): Promise<void> {
+    this.events.push(event);
+  }
+
+  async eventsOf(siteId: SiteId): Promise<readonly SpecialEventRow[]> {
+    return this.events.filter((event) => event.siteId === siteId);
   }
 }
 

@@ -90,6 +90,35 @@ CREATE TABLE IF NOT EXISTS sites_and_areas.capacity_changes (
 
 CREATE INDEX IF NOT EXISTS capacity_changes_site_idx ON sites_and_areas.capacity_changes (site_id, change_id);
 
+-- Weekly opening hours and declared closures and free periods (task A9), in Cairo's local time, the time on the street
+-- signs. A site with no opening_hours rows is open around the clock. Special events are insert-only.
+CREATE TABLE IF NOT EXISTS sites_and_areas.opening_hours (
+  site_id        text NOT NULL REFERENCES sites_and_areas.sites (site_id),
+  weekday        smallint NOT NULL CHECK (weekday BETWEEN 0 AND 6),
+  opens_minute   smallint NOT NULL CHECK (opens_minute BETWEEN 0 AND 1439),
+  closes_minute  smallint NOT NULL CHECK (closes_minute BETWEEN 1 AND 1440),
+  CHECK (opens_minute < closes_minute)
+);
+
+CREATE INDEX IF NOT EXISTS opening_hours_site_idx ON sites_and_areas.opening_hours (site_id);
+
+CREATE TABLE IF NOT EXISTS sites_and_areas.special_events (
+  event_id     text PRIMARY KEY,
+  site_id      text NOT NULL REFERENCES sites_and_areas.sites (site_id),
+  kind         text NOT NULL CHECK (kind IN ('closure', 'free period')),
+  starts_local timestamp without time zone NOT NULL,
+  ends_local   timestamp without time zone NOT NULL,
+  reason       text NOT NULL CHECK (length(trim(reason)) > 0),
+  declared_by  text NOT NULL,
+  declared_at  timestamptz NOT NULL,
+  CHECK (starts_local < ends_local)
+);
+
+CREATE INDEX IF NOT EXISTS special_events_site_idx ON sites_and_areas.special_events (site_id, starts_local);
+
+GRANT SELECT, INSERT, DELETE ON sites_and_areas.opening_hours TO sayes_application;
+GRANT SELECT, INSERT ON sites_and_areas.special_events TO sayes_application;
+
 GRANT SELECT, INSERT, UPDATE ON sites_and_areas.districts, sites_and_areas.zones, sites_and_areas.sites TO sayes_application;
 GRANT SELECT, INSERT ON sites_and_areas.capacity_changes TO sayes_application;
 
