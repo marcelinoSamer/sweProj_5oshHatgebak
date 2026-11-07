@@ -1,5 +1,6 @@
 import type { DistrictId, PersonId, SiteId, ZoneId } from '../../../shared/identifiers';
 import type { AccountStatus, CarRef, LicenceLiveState } from '../public';
+import type { PasswordHash } from './domain/password';
 import type { Person } from './domain/person';
 
 /**
@@ -83,5 +84,12 @@ export interface SignInChallenge {
 export interface SignInChallengeStore {
   find(personId: PersonId): Promise<SignInChallenge | undefined>;
   save(challenge: SignInChallenge): Promise<void>;
+  remove(personId: PersonId): Promise<number>;
+}
+
+/** The `accounts_and_access_control.committee_passwords` table: a salted scrypt hash per member or Chair. */
+export interface CommitteePasswordStore {
+  find(personId: PersonId): Promise<PasswordHash | undefined>;
+  save(personId: PersonId, password: PasswordHash): Promise<void>;
   remove(personId: PersonId): Promise<number>;
 }

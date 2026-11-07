@@ -1,10 +1,12 @@
 import type { PersonId } from '../../../../shared/identifiers';
 import type { AccountStatus, CarRef } from '../../public';
+import type { PasswordHash } from '../domain/password';
 import type { Person } from '../domain/person';
 import type {
   AccessFactsRow,
   AccessFactsStore,
   CarRecord,
+  CommitteePasswordStore,
   ErasedRows,
   PeopleStore,
   PersonalDataStore,
@@ -114,5 +116,21 @@ export class InMemorySignInChallengeStore implements SignInChallengeStore {
 
   async remove(personId: PersonId): Promise<number> {
     return this.challenges.delete(personId) ? 1 : 0;
+  }
+}
+
+export class InMemoryCommitteePasswordStore implements CommitteePasswordStore {
+  private readonly passwords = new Map<PersonId, PasswordHash>();
+
+  async find(personId: PersonId): Promise<PasswordHash | undefined> {
+    return this.passwords.get(personId);
+  }
+
+  async save(personId: PersonId, password: PasswordHash): Promise<void> {
+    this.passwords.set(personId, password);
+  }
+
+  async remove(personId: PersonId): Promise<number> {
+    return this.passwords.delete(personId) ? 1 : 0;
   }
 }

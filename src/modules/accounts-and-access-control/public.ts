@@ -9,6 +9,7 @@ import type { Actor, DistrictId, PersonId, Role, SiteId, ZoneId } from '../../sh
 import type { Result } from '../../shared/result';
 import {
   InMemoryAccessFactsStore,
+  InMemoryCommitteePasswordStore,
   InMemoryPeopleStore,
   InMemoryPersonalDataStore,
   InMemorySignInChallengeStore,
@@ -17,7 +18,7 @@ import { AuthorizationService } from './internal/authorization-service';
 import { SIGN_IN_POLICY as POLICY } from './internal/domain/one-time-code';
 import { SCOPE_RULES } from './internal/domain/scope-rules';
 import { PersonalDataService } from './internal/personal-data-service';
-import type { AccessFactsStore, PeopleStore, PersonalDataStore, SignInChallengeStore } from './internal/ports';
+import type { AccessFactsStore, CommitteePasswordStore, PeopleStore, PersonalDataStore, SignInChallengeStore } from './internal/ports';
 import { SignInService } from './internal/sign-in-service';
 
 export interface Scope {
@@ -142,12 +143,27 @@ export interface PersonalData {
  * "wrong code" also answers an unknown phone, so the sign-in screen never reveals who is registered.
  * "account not live" is a suspended or revoked account, or an attendant without a valid licence.
  */
-export type SignInRefusal = 'wrong code' | 'locked' | 'code expired' | 'account not live';
+export type SignInRefusal =
+  | 'wrong code'
+  | 'locked'
+  | 'code expired'
+  | 'account not live'
+  | 'second step required'
+  | 'wrong password'
+  | 'password not set';
 
-/** Sign-in by phone and one-time code (task A1). The code goes out through the SignInCodeSender port. */
+export type PasswordRefusal = 'not a committee member' | 'not allowed' | 'password too short';
+
+/**
+ * Sign-in by phone and one-time code (task A1). The code goes out through the SignInCodeSender port. Members and the
+ * Chair need a second step, their password (task A15): with the code alone they are answered "second step required"
+ * and the code stays usable for the second step.
+ */
 export interface SignIn {
   requestSignInCode(phone: string): Promise<void>;
   signIn(phone: string, code: string): Promise<Result<{ token: string }, SignInRefusal>>;
+  signInWithSecondStep(phone: string, code: string, password: string): Promise<Result<{ token: string }, SignInRefusal>>;
+  setCommitteePassword(actor: PersonId, personId: PersonId, password: string): Promise<Result<void, PasswordRefusal>>;
 }
 
 /** Port: delivers a one-time code to a phone. Only an adapter names a messaging provider (Rule B). */
@@ -162,6 +178,9 @@ export interface TokenIssuer {
 
 /** The sign-in policy: code length and lifetime, wrong codes before a lock-out, and its length. */
 export const SIGN_IN_POLICY: Readonly<Record<keyof typeof POLICY, number>> = POLICY;
+
+/** The roles that need the second sign-in step, and the shortest password accepted. */
+export { COMMITTEE_ROLES, MINIMUM_PASSWORD_LENGTH } from './internal/domain/password';
 
 /** The fake sender for tests and for development: it records every code instead of sending it. */
 export class RecordingSignInCodeSender implements SignInCodeSender {
@@ -185,6 +204,7 @@ export interface AccountsAndAccessControlStores {
   readonly personalData: PersonalDataStore;
   readonly accessFacts: AccessFactsStore;
   readonly signInChallenges: SignInChallengeStore;
+  readonly committeePasswords: CommitteePasswordStore;
 }
 
 export interface AccountsAndAccessControlDependencies {
@@ -214,6 +234,7 @@ export function createAccountsAndAccessControl(dependencies: AccountsAndAccessCo
     people: stores.people,
     personalData: stores.personalData,
     signInChallenges: stores.signInChallenges,
+    committeePasswords: stores.committeePasswords,
     accessFacts: stores.accessFacts,
     authorization,
     siteLocator,
@@ -223,6 +244,7 @@ export function createAccountsAndAccessControl(dependencies: AccountsAndAccessCo
     people: stores.people,
     personalData: stores.personalData,
     challenges: stores.signInChallenges,
+    passwords: stores.committeePasswords,
     authorization,
     codeSender: signInCodeSender,
     tokenIssuer,
@@ -243,6 +265,7 @@ export function createInMemoryAccountsStores(): AccountsAndAccessControlStores {
     personalData: new InMemoryPersonalDataStore(),
     accessFacts: new InMemoryAccessFactsStore(),
     signInChallenges: new InMemorySignInChallengeStore(),
+    committeePasswords: new InMemoryCommitteePasswordStore(),
   };
 }
 

@@ -89,6 +89,7 @@ describe('A5 report', () => {
       'personal_data.cars': 2,
       'accounts_and_access_control.sign_in_challenges': 0,
       'accounts_and_access_control.access_facts': 0,
+      'accounts_and_access_control.committee_passwords': 0,
     });
     const tables = [...Object.keys(report.rowsRemoved), ...Object.keys(report.rowsMarked)];
     console.log(

@@ -96,8 +96,10 @@ describe('A1 the rest of sign-in', () => {
       throw new Error(member.error);
     }
     await world.accounts.accessFacts.recordMemberDistrict(member.value, 'district-1');
+    await world.accounts.signIn.setCommitteePassword(member.value, member.value, 'a long enough password');
     await world.accounts.signIn.requestSignInCode('01111111111');
-    const outcome = await world.accounts.signIn.signIn('01111111111', world.codeSender.lastCodeSentTo('+201111111111') ?? '');
+    const code = world.codeSender.lastCodeSentTo('+201111111111') ?? '';
+    const outcome = await world.accounts.signIn.signInWithSecondStep('01111111111', code, 'a long enough password');
     if (!outcome.ok) {
       throw new Error(outcome.error);
     }

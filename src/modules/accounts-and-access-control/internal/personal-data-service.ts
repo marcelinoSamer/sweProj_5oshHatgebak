@@ -18,12 +18,13 @@ import type {
 } from '../public';
 import { mayCreate, normaliseDisplayName, normalisePhone, normalisePlate } from './domain/person';
 import { roleMayReadPlateFor } from './domain/plate-access';
-import type { AccessFactsStore, PeopleStore, PersonalDataStore, SignInChallengeStore } from './ports';
+import type { AccessFactsStore, CommitteePasswordStore, PeopleStore, PersonalDataStore, SignInChallengeStore } from './ports';
 
 export interface PersonalDataDependencies {
   readonly people: PeopleStore;
   readonly personalData: PersonalDataStore;
   readonly signInChallenges: SignInChallengeStore;
+  readonly committeePasswords: CommitteePasswordStore;
   readonly accessFacts: AccessFactsStore;
   readonly authorization: Authorization;
   readonly siteLocator: SiteLocator;
@@ -128,6 +129,7 @@ export class PersonalDataService implements PersonalData {
     const personalRows = await this.dependencies.personalData.eraseEverythingAbout(personId);
     const challengeRows = await this.dependencies.signInChallenges.remove(personId);
     const accessFactRows = await this.dependencies.accessFacts.remove(personId);
+    const passwordRows = await this.dependencies.committeePasswords.remove(personId);
     await this.dependencies.people.markErased(personId);
     return succeed({
       rowsRemoved: {
@@ -135,6 +137,7 @@ export class PersonalDataService implements PersonalData {
         'personal_data.cars': personalRows.cars,
         'accounts_and_access_control.sign_in_challenges': challengeRows,
         'accounts_and_access_control.access_facts': accessFactRows,
+        'accounts_and_access_control.committee_passwords': passwordRows,
       },
       rowsMarked: { 'accounts_and_access_control.people': 1 },
     });

@@ -212,3 +212,12 @@ CREATE TABLE IF NOT EXISTS licensing_assignment_attendance.off_site_flags (
 CREATE INDEX IF NOT EXISTS off_site_flags_zone_idx ON licensing_assignment_attendance.off_site_flags (zone_id, raised_at);
 
 GRANT SELECT, INSERT ON licensing_assignment_attendance.location_readings, licensing_assignment_attendance.off_site_flags TO sayes_application;
+
+-- The committee's second sign-in step (task A15): a salted scrypt hash of each member's and the Chair's password.
+CREATE TABLE IF NOT EXISTS accounts_and_access_control.committee_passwords (
+  person_id     text PRIMARY KEY REFERENCES accounts_and_access_control.people (person_id),
+  password_salt char(32) NOT NULL,
+  password_hash char(128) NOT NULL
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON accounts_and_access_control.committee_passwords TO sayes_application;
