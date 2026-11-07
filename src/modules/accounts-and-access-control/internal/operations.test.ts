@@ -40,4 +40,24 @@ describe('A4 through the entry point', () => {
     expect(elsewhere.status).toBe(403);
     expect((await world.audit.readByScope({ personId: driver.value, role: 'driver' })).map((entry) => entry.operation)).toEqual(['personalData.readPlate']);
   });
+
+  it('lets a driver erase themself, with one audit entry that holds no personal data', async () => {
+    const world = createAccountsWorld(siteLocator);
+    const application = composeInMemoryApplication({ tokenSecret: TEST_TOKEN_SECRET, operations: createAccountsOperations(world.accounts) });
+    const driver = await world.accounts.personalData.createPerson('self registration', 'driver', '01011111111', 'Mona Adel');
+    if (!driver.ok) {
+      throw new Error(driver.error);
+    }
+    const request = {
+      method: 'POST' as const,
+      path: '/people/erasure',
+      query: {},
+      headers: { authorization: `Bearer ${signToken({ personId: driver.value, role: 'driver' }, TEST_TOKEN_SECRET)}`, 'x-request-id': 'erase-request-1' },
+      body: { personId: driver.value },
+    };
+    expect((await application.handle(request)).status).toBe(200);
+    const entries = await application.audit.readByScope({ personId: driver.value, role: 'driver' });
+    expect(entries.map((entry) => entry.operation)).toEqual(['personalData.erase']);
+    expect(JSON.stringify(entries)).not.toMatch(/Mona|1011111111/);
+  });
 });

@@ -112,6 +112,14 @@ export interface OwnCar {
   readonly plate: string;
 }
 
+export type ErasureRefusal = 'not allowed' | 'unknown person' | 'already erased';
+
+/** What one erasure touched: rows deleted per table, and rows kept but marked erased per table. */
+export interface ErasureReport {
+  readonly rowsRemoved: Readonly<Record<string, number>>;
+  readonly rowsMarked: Readonly<Record<string, number>>;
+}
+
 export interface PersonalData {
   createPerson(creator: PersonCreator, role: Role, phone: string, displayName: string): Promise<Result<PersonId, CreatePersonRefusal>>;
   /** Saves a car to a driver and returns its reference; ticketing holds the reference, never the plate (task A4). */
@@ -123,6 +131,11 @@ export interface PersonalData {
    * owner (never the plate). Anyone else is refused, and a refusal is not served, so it leaves no entry.
    */
   readPlate(request: PlateReadRequest): Promise<Result<string, PlateReadRefusal>>;
+  /**
+   * Deletes the person's name, phone, cars and plates (task A5). The reference stays, so tickets keep it and remain
+   * whole, but it no longer resolves to anyone. A driver erases themself; the Chair erases anyone but a Chair.
+   */
+  erase(actor: PersonId, personId: PersonId): Promise<Result<ErasureReport, ErasureRefusal>>;
 }
 
 /**
@@ -197,7 +210,15 @@ export interface AccountsAndAccessControl {
 export function createAccountsAndAccessControl(dependencies: AccountsAndAccessControlDependencies): AccountsAndAccessControl {
   const { stores, siteLocator, signInCodeSender, tokenIssuer, audit, clock } = dependencies;
   const authorization = new AuthorizationService({ people: stores.people, accessFacts: stores.accessFacts, siteLocator });
-  const personalData = new PersonalDataService({ people: stores.people, personalData: stores.personalData, authorization, siteLocator, audit });
+  const personalData = new PersonalDataService({
+    people: stores.people,
+    personalData: stores.personalData,
+    signInChallenges: stores.signInChallenges,
+    accessFacts: stores.accessFacts,
+    authorization,
+    siteLocator,
+    audit,
+  });
   const signIn = new SignInService({
     people: stores.people,
     personalData: stores.personalData,

@@ -7,6 +7,8 @@ import type {
   CarRef,
   CarRefusal,
   CreatePersonRefusal,
+  ErasureRefusal,
+  ErasureReport,
   OwnCar,
   PersonalData,
   PersonCreator,
@@ -16,11 +18,13 @@ import type {
 } from '../public';
 import { mayCreate, normaliseDisplayName, normalisePhone, normalisePlate } from './domain/person';
 import { roleMayReadPlateFor } from './domain/plate-access';
-import type { PeopleStore, PersonalDataStore } from './ports';
+import type { AccessFactsStore, PeopleStore, PersonalDataStore, SignInChallengeStore } from './ports';
 
 export interface PersonalDataDependencies {
   readonly people: PeopleStore;
   readonly personalData: PersonalDataStore;
+  readonly signInChallenges: SignInChallengeStore;
+  readonly accessFacts: AccessFactsStore;
   readonly authorization: Authorization;
   readonly siteLocator: SiteLocator;
   /** The audit trail outside any request's transaction: a plate read is a read, yet it must leave an entry. */
@@ -101,6 +105,39 @@ export class PersonalDataService implements PersonalData {
       ...(districtId === undefined ? {} : { districtId }),
     });
     return succeed(car.plate);
+  }
+
+  /**
+   * Erasure (task A5, Law 151 of 2020): the person's name, phone, cars and plates are deleted, with their sign-in code
+   * and access facts. The person reference stays, marked erased, so their tickets and audit entries remain whole while
+   * nothing resolves to a human being any more. A driver erases themself; the Chair erases anyone but a Chair.
+   */
+  async erase(actor: PersonId, personId: PersonId): Promise<Result<ErasureReport, ErasureRefusal>> {
+    const person = await this.dependencies.people.find(personId);
+    if (person === undefined) {
+      return fail('unknown person');
+    }
+    if (person.erased) {
+      return fail('already erased');
+    }
+    const actorRole = await this.dependencies.authorization.roleOf(actor);
+    const erasingThemself = actor === personId && person.role === 'driver';
+    if (!erasingThemself && (actorRole !== 'chair' || person.role === 'chair')) {
+      return fail('not allowed');
+    }
+    const personalRows = await this.dependencies.personalData.eraseEverythingAbout(personId);
+    const challengeRows = await this.dependencies.signInChallenges.remove(personId);
+    const accessFactRows = await this.dependencies.accessFacts.remove(personId);
+    await this.dependencies.people.markErased(personId);
+    return succeed({
+      rowsRemoved: {
+        'personal_data.person_details': personalRows.personDetails,
+        'personal_data.cars': personalRows.cars,
+        'accounts_and_access_control.sign_in_challenges': challengeRows,
+        'accounts_and_access_control.access_facts': accessFactRows,
+      },
+      rowsMarked: { 'accounts_and_access_control.people': 1 },
+    });
   }
 
   private async mayRead(request: PlateReadRequest, readerRole: Role, ownerRef: PersonId): Promise<boolean> {

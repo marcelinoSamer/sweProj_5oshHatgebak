@@ -1,6 +1,6 @@
 import { refuse, respond } from '../../../entrypoint/http';
-import type { Operation, ReadOperation } from '../../../entrypoint/operations/operation';
-import type { AccountsAndAccessControl } from '../public';
+import type { Operation, ReadOperation, WriteOperation } from '../../../entrypoint/operations/operation';
+import type { AccountsAndAccessControl, ErasureRefusal } from '../public';
 
 /**
  * The requests this module answers, for the composition root to register.
@@ -11,8 +11,38 @@ import type { AccountsAndAccessControl } from '../public';
  *   would keep a name, a phone or a plate in the audit log for ever and defeat erasure (question 3).
  */
 export function createAccountsOperations(accounts: AccountsAndAccessControl): readonly Operation[] {
-  return [readOwnCars(accounts), lookUpPlate(accounts)];
+  return [readOwnCars(accounts), lookUpPlate(accounts), erasePerson(accounts)];
 }
+
+/**
+ * The body holds only the person reference, so the audit entry keeps no personal data. The entry names the erased
+ * person as its subject, so the record of the erasure itself survives under the pseudonym.
+ */
+function erasePerson(accounts: AccountsAndAccessControl): WriteOperation {
+  return {
+    kind: 'write',
+    name: 'personalData.erase',
+    method: 'POST',
+    path: '/people/erasure',
+    allowedRoles: ['driver', 'chair'],
+    bodySchema: { fields: { personId: 'string' } },
+    examples: { valid: { personId: 'person-1' }, invalid: {} },
+    async handle({ actor, body }) {
+      const personId = String(body['personId']);
+      const erased = await accounts.personalData.erase(actor.personId, personId);
+      if (!erased.ok) {
+        return { response: refuse(ERASURE_REFUSAL_STATUS[erased.error], erased.error) };
+      }
+      return { response: respond(200, erased.value), audit: { subjectPersonIds: [personId] } };
+    },
+  };
+}
+
+const ERASURE_REFUSAL_STATUS: Readonly<Record<ErasureRefusal, number>> = {
+  'not allowed': 403,
+  'unknown person': 404,
+  'already erased': 409,
+};
 
 /** A driver's own cars, for the driver's own screen. */
 function readOwnCars(accounts: AccountsAndAccessControl): ReadOperation {
