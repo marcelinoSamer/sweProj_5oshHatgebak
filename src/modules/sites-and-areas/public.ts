@@ -20,11 +20,30 @@ export interface GeoPoint {
 
 export type FreeSpaceBand = 'free' | 'few' | 'full' | 'unknown';
 
+/** One site on the driver's map (task A10). The fee is null and the band "unknown" when their source did not answer. */
 export interface NearbySite {
   readonly siteId: SiteId;
+  readonly label: string;
+  readonly centre: GeoPoint;
   readonly distanceMeters: number;
-  readonly firstHourFee: number;
+  readonly open: boolean;
+  readonly firstHourFee: number | null;
   readonly band: FreeSpaceBand;
+}
+
+export type NearbyRefusal = 'invalid point' | 'invalid radius';
+
+/**
+ * Port: free spaces at a site, which ticketing computes from its open tickets (Rule G). The composition root fills it
+ * from TicketQuery, so this module never imports ticketing, which itself imports this one.
+ */
+export interface FreeSpaceSource {
+  freeSpaces(siteId: SiteId): Promise<number>;
+}
+
+/** Port: the committee's first-hour fee at a site at a moment. The composition root fills it from PriceList. */
+export interface PriceSource {
+  firstHourFee(siteId: SiteId, moment: Date): Promise<number>;
 }
 
 /** One value a site's capacity has had, from the moment set by the server clock, with who set it and why. */
@@ -128,6 +147,8 @@ export interface SiteRegistry extends SiteCodes, SiteLocator {
   isOpenAt(siteId: SiteId, moment: Date): Promise<boolean>;
   /** undefined for an unknown site. */
   statusAt(siteId: SiteId, moment: Date): Promise<SiteStatus | undefined>;
+  /** Sites whose centre lies within the radius (up to 20 km), nearest first, with fee and band as of the server clock. */
+  nearbySites(from: GeoPoint, radiusMeters: number): Promise<Result<readonly NearbySite[], NearbyRefusal>>;
   districtExists(districtId: DistrictId): Promise<boolean>;
   siteDetails(siteId: SiteId): Promise<SiteDetails | undefined>;
   /** The current number of spaces; ticketing computes free spaces from this and its open tickets. */
@@ -137,6 +158,9 @@ export interface SiteRegistry extends SiteCodes, SiteLocator {
 
 /** The environment variable holding the secret that signs site codes (a name only; the value never enters the code). */
 export const SITE_CODE_SECRET_VARIABLE = 'SITE_CODE_SECRET';
+
+/** The free-space bands: "full" at none, "few" at most 2 spaces or a fifth of the capacity, "free" above. */
+export { FREE_SPACE_BAND_POLICY } from './internal/domain/nearby';
 
 export function createSiteCodes(secret: string): SiteCodes {
   return new SiteCodesService(new SiteCodeSigner(secret));
@@ -152,18 +176,22 @@ export interface SitesAndAreasDependencies {
   readonly stores: SitesAndAreasStores;
   readonly authorization: Authorization;
   readonly siteCodeSecret: string;
+  readonly freeSpaces: FreeSpaceSource;
+  readonly prices: PriceSource;
   readonly clock: Clock;
 }
 
 /** The composition root builds the registry through this one function; nothing else constructs its internals. */
 export function createSiteRegistry(dependencies: SitesAndAreasDependencies): SiteRegistry {
-  const { stores, authorization, siteCodeSecret, clock } = dependencies;
+  const { stores, authorization, siteCodeSecret, freeSpaces, prices, clock } = dependencies;
   return new SiteRegistryService({
     places: stores.places,
     capacity: stores.capacity,
     calendar: stores.calendar,
     authorization,
     codes: new SiteCodesService(new SiteCodeSigner(siteCodeSecret)),
+    freeSpaces,
+    prices,
     clock,
   });
 }

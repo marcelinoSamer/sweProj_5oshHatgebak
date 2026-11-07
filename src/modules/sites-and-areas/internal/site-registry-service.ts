@@ -6,16 +6,21 @@ import type { Authorization, Scope } from '../../accounts-and-access-control/pub
 import type {
   CapacityChange,
   GeoPoint,
+  FreeSpaceSource,
   LocalDateTime,
+  NearbyRefusal,
+  NearbySite,
   OpeningPeriod,
   PlaceRefusal,
+  PriceSource,
   SiteCodeRefusal,
   SiteDetails,
   SiteRegistry,
   SiteStatus,
   SpecialEventKind,
 } from '../public';
-import { validCapacity, validLabel, validOutline, validReason } from './domain/places';
+import { bandFor, distanceInMeters, isRealPoint, MAXIMUM_RADIUS_METERS } from './domain/nearby';
+import { centreOf, validCapacity, validLabel, validOutline, validReason } from './domain/places';
 import { statusAt, validEventPeriod, validWeeklyHours } from './domain/site-calendar';
 import { PlacesLocator } from './places-locator';
 import type { CapacityStore, PlacesStore, SiteCalendarStore } from './ports';
@@ -27,6 +32,8 @@ export interface SiteRegistryDependencies {
   readonly calendar: SiteCalendarStore;
   readonly authorization: Authorization;
   readonly codes: SiteCodesService;
+  readonly freeSpaces: FreeSpaceSource;
+  readonly prices: PriceSource;
   readonly clock: Clock;
 }
 
@@ -240,6 +247,33 @@ export class SiteRegistryService implements SiteRegistry {
     return statusAt(moment, weeklyHours, events);
   }
 
+  async nearbySites(from: GeoPoint, radiusMeters: number): Promise<Result<readonly NearbySite[], NearbyRefusal>> {
+    if (!isRealPoint(from)) {
+      return fail('invalid point');
+    }
+    if (!Number.isFinite(radiusMeters) || radiusMeters <= 0 || radiusMeters > MAXIMUM_RADIUS_METERS) {
+      return fail('invalid radius');
+    }
+    const moment = this.dependencies.clock.now();
+    const withinRadius = (await this.dependencies.places.allSites())
+      .map((site) => ({ site, centre: centreOf(site.outline) }))
+      .map((candidate) => ({ ...candidate, distanceMeters: Math.round(distanceInMeters(from, candidate.centre)) }))
+      .filter((candidate) => candidate.distanceMeters <= radiusMeters)
+      .sort((first, second) => first.distanceMeters - second.distanceMeters);
+    const described = await Promise.all(
+      withinRadius.map(async ({ site, centre, distanceMeters }) => ({
+        siteId: site.siteId,
+        label: site.label,
+        centre,
+        distanceMeters,
+        open: await this.isOpenAt(site.siteId, moment),
+        firstHourFee: (await answerOrUndefined(() => this.dependencies.prices.firstHourFee(site.siteId, moment))) ?? null,
+        band: bandFor(await answerOrUndefined(() => this.dependencies.freeSpaces.freeSpaces(site.siteId)), (await this.capacityOf(site.siteId)) ?? 0),
+      })),
+    );
+    return succeed(described);
+  }
+
   async districtExists(districtId: DistrictId): Promise<boolean> {
     return (await this.dependencies.places.district(districtId)) !== undefined;
   }
@@ -305,4 +339,17 @@ function validSiteFields(
     return checkedCapacity;
   }
   return succeed({ label: checkedLabel.value, outline: checkedOutline.value, capacity: checkedCapacity.value });
+}
+
+/**
+ * The fee and the free-space count come from other modules; when one of them fails, the map shows that site with an
+ * unknown fee or band instead of failing the whole answer (ADR-09: a failure stays where it happened).
+ */
+async function answerOrUndefined<Value>(ask: () => Promise<Value>): Promise<Value | undefined> {
+  try {
+    return await ask();
+  } catch (error) {
+    console.warn(`nearby sites: a source did not answer: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
 }

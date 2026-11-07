@@ -96,4 +96,22 @@ describe('A6 through the entry point', () => {
     const entries = await application.audit.readByScope({ personId: memberOfDistrictOne, role: 'member', districtId: districtOne });
     expect(entries.map((entry) => [entry.operation, entry.reason])).toEqual([['sites.changeCapacity', 'Two spaces repainted']]);
   });
+
+  it('answers the driver\'s map request, and refuses a missing point', async () => {
+    const zoneId = valueOf(await world.registry.createZone(world.chair, districtOne, 'Zamalek zone 1'));
+    const siteId = valueOf(await world.registry.createSite(world.chair, zoneId, '26 July Street', squareAround(30.0626, 31.2197), 5));
+    world.freeSpaceCounts.set(siteId, 4);
+    world.firstHourFees.set(siteId, 10);
+    const token = signToken({ personId: 'any-driver', role: 'driver' }, TEST_TOKEN_SECRET);
+    const map = await application.handle({
+      method: 'GET',
+      path: '/sites/nearby',
+      query: { latitude: '30.0626', longitude: '31.2197', radius: '500' },
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(map.status).toBe(200);
+    expect((map.body as { sites: { siteId: string; band: string }[] }).sites).toMatchObject([{ siteId, band: 'free', firstHourFee: 10 }]);
+    const missingPoint = await application.handle({ method: 'GET', path: '/sites/nearby', query: { radius: '500' }, headers: { authorization: `Bearer ${token}` } });
+    expect(missingPoint).toEqual({ status: 400, body: { error: 'invalid point' } });
+  });
 });

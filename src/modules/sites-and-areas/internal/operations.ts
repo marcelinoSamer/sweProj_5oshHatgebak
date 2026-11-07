@@ -26,6 +26,7 @@ export function createSitesOperations(registry: SiteRegistry, clock: Clock): rea
     setWeeklyHours(registry),
     readSiteDetails(registry),
     readSiteStatus(registry, clock),
+    readNearbySites(registry),
     readCapacityHistory(registry),
   ];
 }
@@ -212,6 +213,22 @@ function readSiteStatus(registry: SiteRegistry, clock: Clock): ReadOperation {
     async handle({ query }) {
       const status = await registry.statusAt(query['siteId'] ?? '', clock.now());
       return status === undefined ? refuse(404, 'unknown site') : respond(200, status);
+    },
+  };
+}
+
+/** The driver's map: GET /sites/nearby?latitude=30.06&longitude=31.22&radius=1500 (radius in metres). */
+function readNearbySites(registry: SiteRegistry): ReadOperation {
+  return {
+    kind: 'read',
+    name: 'sites.nearby',
+    method: 'GET',
+    path: '/sites/nearby',
+    allowedRoles: ['driver', 'attendant', 'inspector', 'member', 'chair'],
+    async handle({ query }) {
+      const from = { latitude: Number(query['latitude']), longitude: Number(query['longitude']) };
+      const nearby = await registry.nearbySites(from, Number(query['radius']));
+      return nearby.ok ? respond(200, { sites: nearby.value }) : refuse(400, nearby.error);
     },
   };
 }

@@ -10,7 +10,7 @@ import {
 } from '../../../accounts-and-access-control/public';
 import { createHashChainedAuditTrail, type AuditTrail } from '../../../audit-log/public';
 import { FixedClock } from '../../../../shared/clock';
-import type { PersonId, Role } from '../../../../shared/identifiers';
+import type { PersonId, Role, SiteId } from '../../../../shared/identifiers';
 import type { Result } from '../../../../shared/result';
 import {
   createInMemorySitesStores,
@@ -31,6 +31,10 @@ export interface RegistryWorld {
   readonly sitesStores: SitesAndAreasStores;
   readonly registry: SiteRegistry;
   readonly chair: PersonId;
+  /** Free spaces per site, as ticketing would count them; a site missing here makes the source fail. */
+  readonly freeSpaceCounts: Map<SiteId, number>;
+  /** First-hour fees per site, as the committee's price list would give them; a missing site makes the source fail. */
+  readonly firstHourFees: Map<SiteId, number>;
 }
 
 export async function createRegistryWorld(): Promise<RegistryWorld> {
@@ -45,9 +49,18 @@ export async function createRegistryWorld(): Promise<RegistryWorld> {
     audit,
     clock,
   });
-  const registry = createSiteRegistry({ stores: sitesStores, authorization: accounts.authorization, siteCodeSecret: TEST_SITE_CODE_SECRET, clock });
+  const freeSpaceCounts = new Map<SiteId, number>();
+  const firstHourFees = new Map<SiteId, number>();
+  const registry = createSiteRegistry({
+    stores: sitesStores,
+    authorization: accounts.authorization,
+    siteCodeSecret: TEST_SITE_CODE_SECRET,
+    freeSpaces: { freeSpaces: async (siteId) => known(freeSpaceCounts, siteId, 'free-space count') },
+    prices: { firstHourFee: async (siteId) => known(firstHourFees, siteId, 'price') },
+    clock,
+  });
   const chair = valueOf(await accounts.bootstrapChair('01000000000', 'The Chair'));
-  return { clock, audit, accounts, sitesStores, registry, chair };
+  return { clock, audit, accounts, sitesStores, registry, chair, freeSpaceCounts, firstHourFees };
 }
 
 let nextPhoneSuffix = 1;
@@ -74,4 +87,12 @@ export function valueOf<Value>(result: Result<Value, string>): Value {
     throw new Error(`test set-up was refused: ${result.error}`);
   }
   return result.value;
+}
+
+function known(values: ReadonlyMap<SiteId, number>, siteId: SiteId, what: string): number {
+  const value = values.get(siteId);
+  if (value === undefined) {
+    throw new Error(`no ${what} for ${siteId} in this test`);
+  }
+  return value;
 }

@@ -74,7 +74,14 @@ export async function createLicensingWorld(): Promise<LicensingWorld> {
     audit,
     clock,
   });
-  const registry = createSiteRegistry({ stores: sitesStores, authorization: accounts.authorization, siteCodeSecret: TEST_SITE_CODE_SECRET, clock });
+  const registry = createSiteRegistry({
+    stores: sitesStores,
+    authorization: accounts.authorization,
+    siteCodeSecret: TEST_SITE_CODE_SECRET,
+    freeSpaces: { freeSpaces: async () => 0 },
+    prices: { firstHourFee: async () => 0 },
+    clock,
+  });
   const stores = createInMemoryLicensingStores();
   const approvals = new FakeApprovals();
   const licensing = createLicensingAssignmentAttendance({
