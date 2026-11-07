@@ -13,7 +13,11 @@ const ZONES: Readonly<Record<string, string>> = { 'zone-3': 'district-1', 'zone-
 const SITES: Readonly<Record<string, string>> = { 'site-in-zone-3': 'zone-3', 'site-in-zone-4': 'zone-4', 'site-in-zone-9': 'zone-9' };
 
 const siteLocator: SiteLocator = {
-  locateSite: async (siteId) => (SITES[siteId] === undefined ? undefined : { zoneId: SITES[siteId] }),
+  locateSite: async (siteId) => {
+    const zoneId = SITES[siteId];
+    const districtId = zoneId === undefined ? undefined : ZONES[zoneId];
+    return zoneId === undefined || districtId === undefined ? undefined : { zoneId, districtId };
+  },
   locateZone: async (zoneId) => (ZONES[zoneId] === undefined ? undefined : { districtId: ZONES[zoneId] }),
 };
 

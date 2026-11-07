@@ -3,6 +3,7 @@
  * Identities, roles, the hierarchy Chair > Member > Inspector > Attendant, session binding to a site, and the
  * personal-data store with logged joins and erasure (ADR-06 Rule F). Needs AuditTrail.
  */
+import type { AuditTrail } from '../audit-log/public';
 import type { Clock } from '../../shared/clock';
 import type { Actor, DistrictId, PersonId, Role, SiteId, ZoneId } from '../../shared/identifiers';
 import type { Result } from '../../shared/result';
@@ -74,7 +75,7 @@ export interface AccessFacts {
  * module and sites-and-areas never import each other in a circle.
  */
 export interface SiteLocator {
-  locateSite(siteId: SiteId): Promise<{ readonly zoneId: ZoneId } | undefined>;
+  locateSite(siteId: SiteId): Promise<{ readonly zoneId: ZoneId; readonly districtId: DistrictId } | undefined>;
   locateZone(zoneId: ZoneId): Promise<{ readonly districtId: DistrictId } | undefined>;
 }
 
@@ -89,8 +90,39 @@ export type PersonCreator = 'self registration' | PersonId;
 
 export type CreatePersonRefusal = 'not allowed to create this role' | 'invalid phone' | 'invalid name' | 'phone already registered';
 
+export type CarRefusal = 'not a driver' | 'invalid plate';
+
+/** Why a plate is being shown: the driver's receipt, the attendant's cash list, or an inspector's look-up. */
+export type PlateReadPurpose = 'receipt' | 'cash list' | 'inspector look-up';
+
+/** One request to see a plate: the car, who is reading, why, and the site of the ticket concerned. */
+export interface PlateReadRequest {
+  readonly carRef: CarRef;
+  readonly reader: PersonId;
+  readonly purpose: PlateReadPurpose;
+  readonly siteId: SiteId;
+}
+
+/** "not resolvable": no such car, or its owner was erased; the ticket keeps the reference all the same. */
+export type PlateReadRefusal = 'refused' | 'not resolvable';
+
+/** A car as its own driver sees it. */
+export interface OwnCar {
+  readonly carRef: CarRef;
+  readonly plate: string;
+}
+
 export interface PersonalData {
   createPerson(creator: PersonCreator, role: Role, phone: string, displayName: string): Promise<Result<PersonId, CreatePersonRefusal>>;
+  /** Saves a car to a driver and returns its reference; ticketing holds the reference, never the plate (task A4). */
+  addCar(driverId: PersonId, plate: string): Promise<Result<CarRef, CarRefusal>>;
+  ownCars(driverId: PersonId): Promise<readonly OwnCar[]>;
+  /**
+   * The logged join (task A4, Rule F): the owner, or a reader whose role fits the purpose and who has scope over the
+   * site, gets the plate, and every plate served first writes a "plate read" audit entry naming the reader and the
+   * owner (never the plate). Anyone else is refused, and a refusal is not served, so it leaves no entry.
+   */
+  readPlate(request: PlateReadRequest): Promise<Result<string, PlateReadRefusal>>;
 }
 
 /**
@@ -147,6 +179,8 @@ export interface AccountsAndAccessControlDependencies {
   readonly siteLocator: SiteLocator;
   readonly signInCodeSender: SignInCodeSender;
   readonly tokenIssuer: TokenIssuer;
+  /** The audit trail outside any request's transaction, for plate reads. */
+  readonly audit: AuditTrail;
   readonly clock: Clock;
 }
 
@@ -161,9 +195,9 @@ export interface AccountsAndAccessControl {
 
 /** The composition root builds this module through this one function; nothing else constructs its internals. */
 export function createAccountsAndAccessControl(dependencies: AccountsAndAccessControlDependencies): AccountsAndAccessControl {
-  const { stores, siteLocator, signInCodeSender, tokenIssuer, clock } = dependencies;
+  const { stores, siteLocator, signInCodeSender, tokenIssuer, audit, clock } = dependencies;
   const authorization = new AuthorizationService({ people: stores.people, accessFacts: stores.accessFacts, siteLocator });
-  const personalData = new PersonalDataService(stores);
+  const personalData = new PersonalDataService({ people: stores.people, personalData: stores.personalData, authorization, siteLocator, audit });
   const signIn = new SignInService({
     people: stores.people,
     personalData: stores.personalData,
@@ -190,3 +224,5 @@ export function createInMemoryAccountsStores(): AccountsAndAccessControlStores {
     signInChallenges: new InMemorySignInChallengeStore(),
   };
 }
+
+export { createAccountsOperations } from './internal/operations';

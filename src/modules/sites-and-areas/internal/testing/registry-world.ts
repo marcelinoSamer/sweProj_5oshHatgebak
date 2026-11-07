@@ -1,3 +1,5 @@
+import { InMemoryAuditLogStore } from '../../../../adapters/in-memory/in-memory-audit-log-store';
+import { InMemoryDatabase } from '../../../../adapters/in-memory/in-memory-database';
 import { signToken } from '../../../../entrypoint/auth/token';
 import { TEST_TOKEN_SECRET } from '../../../../entrypoint/test-helpers';
 import {
@@ -6,6 +8,7 @@ import {
   RecordingSignInCodeSender,
   type AccountsAndAccessControl,
 } from '../../../accounts-and-access-control/public';
+import { createHashChainedAuditTrail, type AuditTrail } from '../../../audit-log/public';
 import { FixedClock } from '../../../../shared/clock';
 import type { PersonId, Role } from '../../../../shared/identifiers';
 import type { Result } from '../../../../shared/result';
@@ -23,6 +26,7 @@ export const TEST_START = new Date('2026-11-05T08:00:00Z');
 /** Access control and the site registry wired together over in-memory stores, the way the composition root wires them. */
 export interface RegistryWorld {
   readonly clock: FixedClock;
+  readonly audit: AuditTrail;
   readonly accounts: AccountsAndAccessControl;
   readonly sitesStores: SitesAndAreasStores;
   readonly registry: SiteRegistry;
@@ -31,17 +35,19 @@ export interface RegistryWorld {
 
 export async function createRegistryWorld(): Promise<RegistryWorld> {
   const clock = new FixedClock(TEST_START);
+  const audit = createHashChainedAuditTrail(new InMemoryAuditLogStore(new InMemoryDatabase()), clock);
   const sitesStores = createInMemorySitesStores();
   const accounts = createAccountsAndAccessControl({
     stores: createInMemoryAccountsStores(),
     siteLocator: createSiteLocator(sitesStores),
     signInCodeSender: new RecordingSignInCodeSender(),
     tokenIssuer: { issue: (actor) => signToken(actor, TEST_TOKEN_SECRET) },
+    audit,
     clock,
   });
   const registry = createSiteRegistry({ stores: sitesStores, authorization: accounts.authorization, siteCodeSecret: TEST_SITE_CODE_SECRET, clock });
   const chair = valueOf(await accounts.bootstrapChair('01000000000', 'The Chair'));
-  return { clock, accounts, sitesStores, registry, chair };
+  return { clock, audit, accounts, sitesStores, registry, chair };
 }
 
 let nextPhoneSuffix = 1;

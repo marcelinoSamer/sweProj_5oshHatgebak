@@ -16,6 +16,9 @@ export interface Person {
 
 const MAXIMUM_DISPLAY_NAME_LENGTH = 100;
 
+/** Plates in version one are English letters and digits (no Arabic-language processing yet), up to ten of them. */
+const PLATE = /^[A-Z0-9]{1,10}$/;
+
 /** Egyptian mobile numbers: 010, 011, 012 or 015 followed by eight digits, with or without the +20 country code. */
 const EGYPTIAN_MOBILE = /^(?:\+20|0020|0)?(1[0125]\d{8})$/;
 
@@ -33,6 +36,12 @@ export function normalisePhone(phone: string): Result<string, 'invalid phone'> {
   const digitsOnly = phone.replace(/[\s-]/g, '');
   const match = EGYPTIAN_MOBILE.exec(digitsOnly);
   return match?.[1] === undefined ? fail('invalid phone') : succeed(`+20${match[1]}`);
+}
+
+/** Upper case with spaces and dashes removed, so "abc 123" and "ABC-123" are the same plate. */
+export function normalisePlate(plate: string): Result<string, 'invalid plate'> {
+  const compact = plate.toUpperCase().replace(/[\s-]/g, '');
+  return PLATE.test(compact) ? succeed(compact) : fail('invalid plate');
 }
 
 export function normaliseDisplayName(displayName: string): Result<string, 'invalid name'> {

@@ -1,5 +1,8 @@
+import { InMemoryAuditLogStore } from '../../../../adapters/in-memory/in-memory-audit-log-store';
+import { InMemoryDatabase } from '../../../../adapters/in-memory/in-memory-database';
 import { signToken } from '../../../../entrypoint/auth/token';
 import { TEST_TOKEN_SECRET } from '../../../../entrypoint/test-helpers';
+import { createHashChainedAuditTrail, type AuditTrail } from '../../../audit-log/public';
 import { FixedClock } from '../../../../shared/clock';
 import type { DistrictId, PersonId, Role, SiteId, ZoneId } from '../../../../shared/identifiers';
 import type { Result } from '../../../../shared/result';
@@ -42,6 +45,7 @@ export const TEST_SITE_CODE_SECRET = 'site-code-secret-for-tests';
  */
 export interface LicensingWorld {
   readonly clock: FixedClock;
+  readonly audit: AuditTrail;
   readonly accounts: AccountsAndAccessControl;
   readonly registry: SiteRegistry;
   readonly licensing: LicensingAssignmentAttendance;
@@ -60,12 +64,14 @@ export interface LicensingWorld {
 
 export async function createLicensingWorld(): Promise<LicensingWorld> {
   const clock = new FixedClock(new Date('2026-11-05T08:00:00Z'));
+  const audit = createHashChainedAuditTrail(new InMemoryAuditLogStore(new InMemoryDatabase()), clock);
   const sitesStores = createInMemorySitesStores();
   const accounts = createAccountsAndAccessControl({
     stores: createInMemoryAccountsStores(),
     siteLocator: createSiteLocator(sitesStores),
     signInCodeSender: new RecordingSignInCodeSender(),
     tokenIssuer: { issue: (actor) => signToken(actor, TEST_TOKEN_SECRET) },
+    audit,
     clock,
   });
   const registry = createSiteRegistry({ stores: sitesStores, authorization: accounts.authorization, siteCodeSecret: TEST_SITE_CODE_SECRET, clock });
@@ -87,7 +93,7 @@ export async function createLicensingWorld(): Promise<LicensingWorld> {
   const siteOne = valueOf(await registry.createSite(chair, zoneOne, '26 July Street', squareAround(30.0626, 31.2197), 12));
   const siteOneBis = valueOf(await registry.createSite(chair, zoneOne, 'Brazil Street', squareAround(30.0650, 31.2210), 8));
   const siteTwo = valueOf(await registry.createSite(chair, zoneTwo, 'Tahrir Street', squareAround(30.0385, 31.2118), 20));
-  const world = { clock, accounts, registry, licensing, stores, approvals, chair, districtOne, districtTwo, zoneOne, zoneTwo, siteOne, siteOneBis, siteTwo };
+  const world = { clock, audit, accounts, registry, licensing, stores, approvals, chair, districtOne, districtTwo, zoneOne, zoneTwo, siteOne, siteOneBis, siteTwo };
   const memberOfDistrictOne = await createPerson({ ...world, memberOfDistrictOne: chair }, 'member');
   valueOf(await licensing.assignments.appointMemberToDistrict(chair, memberOfDistrictOne, districtOne));
   return { ...world, memberOfDistrictOne };
