@@ -134,6 +134,10 @@ export class SiteRegistryService implements SiteRegistry {
     return succeed(undefined);
   }
 
+  async districtExists(districtId: DistrictId): Promise<boolean> {
+    return (await this.dependencies.places.district(districtId)) !== undefined;
+  }
+
   async siteDetails(siteId: SiteId): Promise<SiteDetails | undefined> {
     const site = await this.dependencies.places.site(siteId);
     const zone = site === undefined ? undefined : await this.dependencies.places.zone(site.zoneId);

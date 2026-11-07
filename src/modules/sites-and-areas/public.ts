@@ -78,6 +78,7 @@ export interface SiteRegistry extends SiteCodes, SiteLocator {
   relabelZone(actor: PersonId, zoneId: ZoneId, label: string): Promise<Result<void, PlaceRefusal>>;
   createSite(actor: PersonId, zoneId: ZoneId, label: string, outline: readonly GeoPoint[], capacity: number): Promise<Result<SiteId, PlaceRefusal>>;
   replaceSiteOutline(actor: PersonId, siteId: SiteId, outline: readonly GeoPoint[]): Promise<Result<void, PlaceRefusal>>;
+  districtExists(districtId: DistrictId): Promise<boolean>;
   siteDetails(siteId: SiteId): Promise<SiteDetails | undefined>;
   /** The current number of spaces; ticketing computes free spaces from this and its open tickets. */
   capacityOf(siteId: SiteId): Promise<number | undefined>;

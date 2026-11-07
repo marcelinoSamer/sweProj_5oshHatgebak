@@ -90,3 +90,34 @@ CREATE TABLE IF NOT EXISTS sites_and_areas.capacity_changes (
 
 GRANT SELECT, INSERT, UPDATE ON sites_and_areas.districts, sites_and_areas.zones, sites_and_areas.sites TO sayes_application;
 GRANT SELECT, INSERT ON sites_and_areas.capacity_changes TO sayes_application;
+
+-- Who works where (task A12): an attendant at one fixed site with a changeable shift, an inspector over one zone, a
+-- member over one district. The primary keys enforce one site per attendant, one zone per inspector and one district
+-- per member. Each change is mirrored into accounts_and_access_control.access_facts in the same transaction.
+CREATE TABLE IF NOT EXISTS licensing_assignment_attendance.attendant_assignments (
+  attendant_id text PRIMARY KEY,
+  site_id      text NOT NULL,
+  shift_id     text NOT NULL,
+  assigned_by  text NOT NULL,
+  assigned_at  timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS licensing_assignment_attendance.inspector_assignments (
+  inspector_id text PRIMARY KEY,
+  zone_id      text NOT NULL,
+  assigned_by  text NOT NULL,
+  assigned_at  timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS licensing_assignment_attendance.member_appointments (
+  member_id    text PRIMARY KEY,
+  district_id  text NOT NULL,
+  appointed_by text NOT NULL,
+  appointed_at timestamptz NOT NULL
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+  licensing_assignment_attendance.attendant_assignments,
+  licensing_assignment_attendance.inspector_assignments,
+  licensing_assignment_attendance.member_appointments
+TO sayes_application;

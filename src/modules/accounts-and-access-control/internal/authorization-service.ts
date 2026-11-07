@@ -95,6 +95,13 @@ export class AuthorizationService implements Authorization, AccessFacts {
     await this.dependencies.accessFacts.update(attendantId, (current) => ({ ...withoutBoundSite(current), attendantSiteId: siteId }));
   }
 
+  async clearAttendantSite(attendantId: PersonId): Promise<void> {
+    await this.dependencies.accessFacts.update(attendantId, (current) => {
+      const { attendantSiteId: _released, ...rest } = withoutBoundSite(current);
+      return rest;
+    });
+  }
+
   async recordInspectorZone(inspectorId: PersonId, zoneId: ZoneId): Promise<void> {
     await this.dependencies.accessFacts.update(inspectorId, (current) => ({ ...current, inspectorZoneId: zoneId }));
   }

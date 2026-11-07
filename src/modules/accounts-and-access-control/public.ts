@@ -64,6 +64,7 @@ export type LicenceLiveState = 'valid' | 'suspended' | 'revoked';
 export interface AccessFacts {
   recordLicenceState(attendantId: PersonId, state: LicenceLiveState): Promise<void>;
   recordAttendantSite(attendantId: PersonId, siteId: SiteId): Promise<void>;
+  clearAttendantSite(attendantId: PersonId): Promise<void>;
   recordInspectorZone(inspectorId: PersonId, zoneId: ZoneId): Promise<void>;
   recordMemberDistrict(memberId: PersonId, districtId: DistrictId): Promise<void>;
 }
