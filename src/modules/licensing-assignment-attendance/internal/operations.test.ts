@@ -57,4 +57,14 @@ describe('A12 through the entry point', () => {
     const response = await application.handle(post('/assignments/members', world.memberOfDistrictOne, 'member', { memberId: member, districtId: world.districtOne }));
     expect(response.status).toBe(403);
   });
+
+  it('issues a licence with one audit entry the attendant can read, and refuses a second one', async () => {
+    const attendant = await createPerson(world, 'attendant');
+    const first = await application.handle(post('/licences', world.chair, 'chair', { attendantId: attendant }));
+    expect(first.status).toBe(201);
+    const second = await application.handle(post('/licences', world.chair, 'chair', { attendantId: attendant }));
+    expect(second).toEqual({ status: 409, body: { error: 'already licensed' } });
+    const asAttendant = await application.audit.readByScope({ personId: attendant, role: 'attendant' });
+    expect(asAttendant.map((entry) => entry.operation)).toEqual(['licences.issue']);
+  });
 });

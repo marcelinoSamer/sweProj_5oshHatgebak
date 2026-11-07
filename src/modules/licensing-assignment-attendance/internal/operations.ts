@@ -4,7 +4,7 @@ import type { BodySchema, ValidBody } from '../../../entrypoint/operations/body-
 import type { DistrictId, PersonId, Role } from '../../../shared/identifiers';
 import type { Result } from '../../../shared/result';
 import type { SiteRegistry } from '../../sites-and-areas/public';
-import type { AssignmentRefusal, LicensingAssignmentAttendance } from '../public';
+import type { AssignmentRefusal, LicenceRefusal, LicensingAssignmentAttendance } from '../public';
 
 /**
  * The requests this module answers, for the composition root to register. The entry point writes the one audit entry
@@ -56,6 +56,7 @@ export function createLicensingOperations(module: LicensingAssignmentAttendance,
       change: ({ actor, body }) => assignments.assignInspectorToZone(actor.personId, String(body['inspectorId']), String(body['zoneId'])),
       district: ({ body }) => districtOfZone(body['zoneId']),
     }),
+    issueLicence(module, districtOfSite),
     assignmentWrite({
       name: 'assignments.appointMember',
       path: '/assignments/members',
@@ -68,6 +69,43 @@ export function createLicensingOperations(module: LicensingAssignmentAttendance,
     }),
   ];
 }
+
+/**
+ * Issuing is the only licence change reachable by request. Suspension and revocation have no route of their own: they
+ * arrive through the Chair's approval, whose request writes the audit entry naming requester and approver.
+ */
+function issueLicence(module: LicensingAssignmentAttendance, districtOfSite: (siteId: unknown) => Promise<DistrictId | undefined>): WriteOperation {
+  return {
+    kind: 'write',
+    name: 'licences.issue',
+    method: 'POST',
+    path: '/licences',
+    allowedRoles: ['member', 'chair'],
+    bodySchema: { fields: { attendantId: 'string' } },
+    examples: { valid: { attendantId: 'person-1' }, invalid: { attendantId: 1 } },
+    async handle({ actor, body }) {
+      const attendantId = String(body['attendantId']);
+      const issued = await module.licences.issueLicence(actor.personId, attendantId);
+      if (!issued.ok) {
+        return { response: refuse(LICENCE_REFUSAL_STATUS[issued.error], issued.error) };
+      }
+      const districtId = await districtOfSite(await module.assignments.siteOf(attendantId));
+      return {
+        response: respond(201, { licenceId: issued.value }),
+        audit: districtId === undefined ? { subjectPersonIds: [attendantId] } : { subjectPersonIds: [attendantId], districtId },
+      };
+    },
+  };
+}
+
+const LICENCE_REFUSAL_STATUS: Readonly<Record<LicenceRefusal, number>> = {
+  'needs an approved request': 403,
+  'not a permitted change': 409,
+  'unknown licence': 404,
+  'already licensed': 409,
+  'not an attendant': 400,
+  'not allowed here': 403,
+};
 
 interface AssignmentWriteSpec {
   readonly name: string;

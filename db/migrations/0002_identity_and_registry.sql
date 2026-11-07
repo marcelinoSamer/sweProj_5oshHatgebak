@@ -121,3 +121,24 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   licensing_assignment_attendance.inspector_assignments,
   licensing_assignment_attendance.member_appointments
 TO sayes_application;
+
+-- Attendant licences (task A11). One licence per attendant. The state is never stored on the licence: it is the
+-- target of the latest row in licence_state_changes, an insert-only history where every move after the issue names
+-- the approved request that ordered it.
+CREATE TABLE IF NOT EXISTS licensing_assignment_attendance.licences (
+  licence_id   text PRIMARY KEY,
+  attendant_id text NOT NULL UNIQUE,
+  issued_by    text NOT NULL,
+  issued_at    timestamptz NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS licensing_assignment_attendance.licence_state_changes (
+  licence_id          text NOT NULL REFERENCES licensing_assignment_attendance.licences (licence_id),
+  from_state          text CHECK (from_state IN ('valid', 'suspended')),
+  to_state            text NOT NULL CHECK (to_state IN ('valid', 'suspended', 'revoked')),
+  approval_request_id text,
+  changed_at          timestamptz NOT NULL,
+  CHECK ((from_state IS NULL AND approval_request_id IS NULL) OR (from_state IS NOT NULL AND approval_request_id IS NOT NULL))
+);
+
+GRANT SELECT, INSERT ON licensing_assignment_attendance.licences, licensing_assignment_attendance.licence_state_changes TO sayes_application;

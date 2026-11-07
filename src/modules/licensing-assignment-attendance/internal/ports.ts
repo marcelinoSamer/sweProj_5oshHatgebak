@@ -1,4 +1,5 @@
-import type { DistrictId, PersonId, SiteId, ZoneId } from '../../../shared/identifiers';
+import type { DistrictId, LicenceId, PersonId, SiteId, ZoneId } from '../../../shared/identifiers';
+import type { LicenceStateChange } from '../public';
 
 /**
  * Storage ports owned by this module. The in-memory adapters in `adapters/` implement them for every test; the
@@ -38,4 +39,23 @@ export interface AssignmentsStore {
   member(memberId: PersonId): Promise<MemberAppointment | undefined>;
   saveMember(appointment: MemberAppointment): Promise<void>;
   count(): Promise<number>;
+}
+
+/** One row of `licensing_assignment_attendance.licences`. The current state is the last change's target state. */
+export interface LicenceRow {
+  readonly licenceId: LicenceId;
+  readonly attendantId: PersonId;
+  readonly issuedBy: PersonId;
+  readonly issuedAt: string;
+}
+
+/** One row of `licensing_assignment_attendance.licence_state_changes`: insert-only, every move with its approval. */
+export type LicenceStateChangeRow = LicenceStateChange;
+
+export interface LicencesStore {
+  add(licence: LicenceRow): Promise<void>;
+  find(licenceId: LicenceId): Promise<LicenceRow | undefined>;
+  ofAttendant(attendantId: PersonId): Promise<LicenceRow | undefined>;
+  appendChange(change: LicenceStateChangeRow): Promise<void>;
+  changesOf(licenceId: LicenceId): Promise<readonly LicenceStateChangeRow[]>;
 }

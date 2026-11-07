@@ -10,7 +10,29 @@ import {
   type AccountsAndAccessControl,
 } from '../../../accounts-and-access-control/public';
 import { createInMemorySitesStores, createSiteLocator, createSiteRegistry, type SiteRegistry } from '../../../sites-and-areas/public';
-import { createInMemoryLicensingStores, createLicensingAssignmentAttendance, type LicensingAssignmentAttendance, type LicensingAssignmentAttendanceStores } from '../../public';
+import {
+  createInMemoryLicensingStores,
+  createLicensingAssignmentAttendance,
+  type ApprovalVerifier,
+  type LicenceState,
+  type LicensingAssignmentAttendance,
+  type LicensingAssignmentAttendanceStores,
+} from '../../public';
+import type { ApprovalRequestId, LicenceId } from '../../../../shared/identifiers';
+
+/** A stand-in for Approvals: it confirms exactly the requests a test has marked approved, for exactly that move. */
+export class FakeApprovals implements ApprovalVerifier {
+  private readonly approved = new Map<ApprovalRequestId, { readonly licenceId: LicenceId; readonly to: LicenceState }>();
+
+  approve(approvalRequestId: ApprovalRequestId, licenceId: LicenceId, to: LicenceState): void {
+    this.approved.set(approvalRequestId, { licenceId, to });
+  }
+
+  async isApproved(approvalRequestId: ApprovalRequestId, change: { readonly licenceId: LicenceId; readonly to: LicenceState }): Promise<boolean> {
+    const approvedChange = this.approved.get(approvalRequestId);
+    return approvedChange?.licenceId === change.licenceId && approvedChange.to === change.to;
+  }
+}
 
 export const TEST_SITE_CODE_SECRET = 'site-code-secret-for-tests';
 
@@ -24,6 +46,7 @@ export interface LicensingWorld {
   readonly registry: SiteRegistry;
   readonly licensing: LicensingAssignmentAttendance;
   readonly stores: LicensingAssignmentAttendanceStores;
+  readonly approvals: FakeApprovals;
   readonly chair: PersonId;
   readonly memberOfDistrictOne: PersonId;
   readonly districtOne: DistrictId;
@@ -47,11 +70,13 @@ export async function createLicensingWorld(): Promise<LicensingWorld> {
   });
   const registry = createSiteRegistry({ stores: sitesStores, authorization: accounts.authorization, siteCodeSecret: TEST_SITE_CODE_SECRET, clock });
   const stores = createInMemoryLicensingStores();
+  const approvals = new FakeApprovals();
   const licensing = createLicensingAssignmentAttendance({
     stores,
     authorization: accounts.authorization,
     accessFacts: accounts.accessFacts,
     registry,
+    approvals,
     clock,
   });
   const chair = valueOf(await accounts.bootstrapChair('01000000000', 'The Chair'));
@@ -62,7 +87,7 @@ export async function createLicensingWorld(): Promise<LicensingWorld> {
   const siteOne = valueOf(await registry.createSite(chair, zoneOne, '26 July Street', squareAround(30.0626, 31.2197), 12));
   const siteOneBis = valueOf(await registry.createSite(chair, zoneOne, 'Brazil Street', squareAround(30.0650, 31.2210), 8));
   const siteTwo = valueOf(await registry.createSite(chair, zoneTwo, 'Tahrir Street', squareAround(30.0385, 31.2118), 20));
-  const world = { clock, accounts, registry, licensing, stores, chair, districtOne, districtTwo, zoneOne, zoneTwo, siteOne, siteOneBis, siteTwo };
+  const world = { clock, accounts, registry, licensing, stores, approvals, chair, districtOne, districtTwo, zoneOne, zoneTwo, siteOne, siteOneBis, siteTwo };
   const memberOfDistrictOne = await createPerson({ ...world, memberOfDistrictOne: chair }, 'member');
   valueOf(await licensing.assignments.appointMemberToDistrict(chair, memberOfDistrictOne, districtOne));
   return { ...world, memberOfDistrictOne };

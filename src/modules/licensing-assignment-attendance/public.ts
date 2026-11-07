@@ -4,21 +4,55 @@
  * clock in and out, off-site flags. Needs AuditTrail.
  */
 import type { Clock } from '../../shared/clock';
-import type { DistrictId, LicenceId, PersonId, SiteId, ZoneId } from '../../shared/identifiers';
+import type { ApprovalRequestId, DistrictId, LicenceId, PersonId, SiteId, ZoneId } from '../../shared/identifiers';
 import type { RequestId } from '../../shared/request-id';
 import type { Result } from '../../shared/result';
 import type { AccessFacts, Authorization, LicenceLiveState } from '../accounts-and-access-control/public';
 import type { SiteRegistry } from '../sites-and-areas/public';
-import { InMemoryAssignmentsStore } from './internal/adapters/in-memory-stores';
+import { InMemoryAssignmentsStore, InMemoryLicencesStore } from './internal/adapters/in-memory-stores';
 import { AssignmentsService } from './internal/assignments-service';
-import type { AssignmentsStore } from './internal/ports';
+import { LicencesService } from './internal/licences-service';
+import type { AssignmentsStore, LicencesStore } from './internal/ports';
 
 export type LicenceState = LicenceLiveState;
 
+export type LicenceRefusal =
+  | 'needs an approved request'
+  | 'not a permitted change'
+  | 'unknown licence'
+  | 'already licensed'
+  | 'not an attendant'
+  | 'not allowed here';
+
+/** One move of a licence, kept forever with the approved request that ordered it (null only for the issue). */
+export interface LicenceStateChange {
+  readonly licenceId: LicenceId;
+  readonly from: LicenceState | null;
+  readonly to: LicenceState;
+  readonly approvalRequestId: ApprovalRequestId | null;
+  readonly changedAt: string;
+}
+
+/**
+ * Attendant licences (task A11). The committee issues one licence per attendant. Suspension and revocation happen
+ * only through applyApprovedStateChange, which Approvals calls inside the transaction that approves the request; any
+ * other attempt is refused "needs an approved request".
+ */
 export interface LicenceStatus {
-  statusOf(attendantId: PersonId): Promise<LicenceState>;
-  issueLicence(requestId: RequestId, attendantId: PersonId): Promise<LicenceId>;
-  applyApprovedStateChange(licenceId: LicenceId, to: LicenceState, approvalRequestId: string): Promise<void>;
+  /** undefined when the attendant has never been licensed. */
+  statusOf(attendantId: PersonId): Promise<LicenceState | undefined>;
+  licenceOf(attendantId: PersonId): Promise<LicenceId | undefined>;
+  issueLicence(actor: PersonId, attendantId: PersonId): Promise<Result<LicenceId, LicenceRefusal>>;
+  applyApprovedStateChange(licenceId: LicenceId, to: LicenceState, approvalRequestId: ApprovalRequestId): Promise<Result<void, LicenceRefusal>>;
+  history(licenceId: LicenceId): Promise<readonly LicenceStateChange[]>;
+}
+
+/**
+ * Port: confirms that an approval request exists, was approved by the Chair, and orders exactly this licence move. The
+ * composition root fills it from Approvals (Teammate C), which this module may not import because Approvals imports it.
+ */
+export interface ApprovalVerifier {
+  isApproved(approvalRequestId: ApprovalRequestId, change: { readonly licenceId: LicenceId; readonly to: LicenceState }): Promise<boolean>;
 }
 
 export type AssignmentRefusal =
@@ -60,6 +94,7 @@ export interface Attendance {
 
 export interface LicensingAssignmentAttendanceStores {
   readonly assignments: AssignmentsStore;
+  readonly licences: LicencesStore;
 }
 
 export interface LicensingAssignmentAttendanceDependencies {
@@ -67,23 +102,26 @@ export interface LicensingAssignmentAttendanceDependencies {
   readonly authorization: Authorization;
   readonly accessFacts: AccessFacts;
   readonly registry: SiteRegistry;
+  readonly approvals: ApprovalVerifier;
   readonly clock: Clock;
 }
 
 export interface LicensingAssignmentAttendance {
   readonly assignments: Assignments;
+  readonly licences: LicenceStatus;
 }
 
 /** The composition root builds this module through this one function; nothing else constructs its internals. */
 export function createLicensingAssignmentAttendance(dependencies: LicensingAssignmentAttendanceDependencies): LicensingAssignmentAttendance {
-  const { stores, authorization, accessFacts, registry, clock } = dependencies;
+  const { stores, authorization, accessFacts, registry, approvals, clock } = dependencies;
   return {
     assignments: new AssignmentsService({ assignments: stores.assignments, authorization, accessFacts, registry, clock }),
+    licences: new LicencesService({ licences: stores.licences, assignments: stores.assignments, authorization, accessFacts, approvals, clock }),
   };
 }
 
 export function createInMemoryLicensingStores(): LicensingAssignmentAttendanceStores {
-  return { assignments: new InMemoryAssignmentsStore() };
+  return { assignments: new InMemoryAssignmentsStore(), licences: new InMemoryLicencesStore() };
 }
 
 export { createLicensingOperations } from './internal/operations';

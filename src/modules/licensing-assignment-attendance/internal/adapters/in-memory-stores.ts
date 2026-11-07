@@ -1,5 +1,13 @@
-import type { PersonId } from '../../../../shared/identifiers';
-import type { AssignmentsStore, AttendantAssignment, InspectorAssignment, MemberAppointment } from '../ports';
+import type { LicenceId, PersonId } from '../../../../shared/identifiers';
+import type {
+  AssignmentsStore,
+  AttendantAssignment,
+  InspectorAssignment,
+  LicenceRow,
+  LicencesStore,
+  LicenceStateChangeRow,
+  MemberAppointment,
+} from '../ports';
 
 /** In-memory stand-ins for this module's tables, used by every test. */
 export class InMemoryAssignmentsStore implements AssignmentsStore {
@@ -37,5 +45,30 @@ export class InMemoryAssignmentsStore implements AssignmentsStore {
 
   async count(): Promise<number> {
     return this.attendants.size + this.inspectors.size + this.members.size;
+  }
+}
+
+export class InMemoryLicencesStore implements LicencesStore {
+  private readonly licences = new Map<LicenceId, LicenceRow>();
+  private readonly changes: LicenceStateChangeRow[] = [];
+
+  async add(licence: LicenceRow): Promise<void> {
+    this.licences.set(licence.licenceId, licence);
+  }
+
+  async find(licenceId: LicenceId): Promise<LicenceRow | undefined> {
+    return this.licences.get(licenceId);
+  }
+
+  async ofAttendant(attendantId: PersonId): Promise<LicenceRow | undefined> {
+    return [...this.licences.values()].find((licence) => licence.attendantId === attendantId);
+  }
+
+  async appendChange(change: LicenceStateChangeRow): Promise<void> {
+    this.changes.push(change);
+  }
+
+  async changesOf(licenceId: LicenceId): Promise<readonly LicenceStateChangeRow[]> {
+    return this.changes.filter((change) => change.licenceId === licenceId);
   }
 }
