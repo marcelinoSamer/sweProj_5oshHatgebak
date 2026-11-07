@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import type { Clock } from '../../../shared/clock';
-import type { PersonId, SiteId } from '../../../shared/identifiers';
+import type { PersonId, SiteId, ZoneId } from '../../../shared/identifiers';
 import { fail, succeed, type Result } from '../../../shared/result';
 import type { Authorization } from '../../accounts-and-access-control/public';
-import type { SiteCodeRefusal, SiteRegistry } from '../../sites-and-areas/public';
-import type { ClockInRefusal, ClockOutRefusal } from '../public';
-import type { AssignmentsStore, AttendanceStore } from './ports';
+import type { GeoPoint, SiteCodeRefusal, SiteRegistry } from '../../sites-and-areas/public';
+import type { ClockInRefusal, ClockOutRefusal, LocationRefusal, OffSiteFlag } from '../public';
+import { isOffSite } from './domain/off-site-rule';
+import type { AssignmentsStore, AttendanceStore, OffSiteStore } from './ports';
 
 export interface AttendanceDependencies {
   readonly attendance: AttendanceStore;
+  readonly offSite: OffSiteStore;
   readonly assignments: AssignmentsStore;
   readonly authorization: Authorization;
   readonly registry: SiteRegistry;
@@ -62,6 +64,49 @@ export class AttendanceService {
 
   async isClockedIn(attendantId: PersonId): Promise<boolean> {
     return (await this.dependencies.attendance.open(attendantId)) !== undefined;
+  }
+
+  /**
+   * A location reading from the attendant's phone during a shift (task A14). The reading's time is the server's; only
+   * its distance from the site is kept. Returns whether this reading raised the shift's off-site flag.
+   */
+  async recordLocationPoint(attendantId: PersonId, point: GeoPoint): Promise<Result<{ flagRaised: boolean }, LocationRefusal>> {
+    const open = await this.dependencies.attendance.open(attendantId);
+    if (open === undefined) {
+      return fail('not clocked in');
+    }
+    const distanceMeters = await this.dependencies.registry.distanceFromSite(open.siteId, point);
+    if (distanceMeters === undefined) {
+      return fail('invalid point');
+    }
+    const now = this.dependencies.clock.now().toISOString();
+    await this.dependencies.offSite.addReading({ attendanceId: open.attendanceId, distanceMeters: Math.round(distanceMeters), recordedAt: now });
+    if ((await this.dependencies.offSite.flagOf(open.attendanceId)) !== undefined) {
+      return succeed({ flagRaised: false });
+    }
+    const readings = await this.dependencies.offSite.readingsOf(open.attendanceId);
+    const zoneId = (await this.dependencies.registry.locateSite(open.siteId))?.zoneId;
+    if (zoneId === undefined || !isOffSite(readings.map((reading) => reading.distanceMeters))) {
+      return succeed({ flagRaised: false });
+    }
+    await this.dependencies.offSite.addFlag({
+      flagId: `off-site-${randomUUID()}`,
+      attendanceId: open.attendanceId,
+      attendantId,
+      siteId: open.siteId,
+      zoneId,
+      raisedAt: now,
+    });
+    return succeed({ flagRaised: true });
+  }
+
+  /** The inspector's list: off-site flags raised in a zone, for someone with scope over that zone. */
+  async offSiteFlags(actor: PersonId, zoneId: ZoneId): Promise<Result<readonly OffSiteFlag[], 'not allowed here'>> {
+    if (!(await this.dependencies.authorization.may(actor, 'attendance.offSiteFlags', { zoneId }))) {
+      return fail('not allowed here');
+    }
+    const flags = await this.dependencies.offSite.flagsIn(zoneId);
+    return succeed(flags.map(({ flagId, attendantId, siteId, raisedAt }) => ({ flagId, attendantId, siteId, raisedAt })));
   }
 
   private async verifyEitherCode(code: string, siteId: SiteId): Promise<Result<SiteId, ClockInRefusal>> {

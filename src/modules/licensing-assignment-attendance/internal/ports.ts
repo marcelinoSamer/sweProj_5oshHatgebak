@@ -77,3 +77,30 @@ export interface AttendanceStore {
   close(attendanceId: string, clockedOutAt: string): Promise<void>;
   all(): Promise<readonly AttendanceRow[]>;
 }
+
+/**
+ * One location reading during a shift. Only its distance from the site is kept, never the coordinates: the rule needs
+ * nothing more, and personal data is collected minimally (Law 151 of 2020).
+ */
+export interface LocationReading {
+  readonly attendanceId: string;
+  readonly distanceMeters: number;
+  readonly recordedAt: string;
+}
+
+export interface OffSiteFlagRow {
+  readonly flagId: string;
+  readonly attendanceId: string;
+  readonly attendantId: PersonId;
+  readonly siteId: SiteId;
+  readonly zoneId: ZoneId;
+  readonly raisedAt: string;
+}
+
+export interface OffSiteStore {
+  addReading(reading: LocationReading): Promise<void>;
+  readingsOf(attendanceId: string): Promise<readonly LocationReading[]>;
+  flagOf(attendanceId: string): Promise<OffSiteFlagRow | undefined>;
+  addFlag(flag: OffSiteFlagRow): Promise<void>;
+  flagsIn(zoneId: ZoneId): Promise<readonly OffSiteFlagRow[]>;
+}

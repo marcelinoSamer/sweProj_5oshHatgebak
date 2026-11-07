@@ -1,4 +1,4 @@
-import type { LicenceId, PersonId } from '../../../../shared/identifiers';
+import type { LicenceId, PersonId, ZoneId } from '../../../../shared/identifiers';
 import type {
   AttendanceRow,
   AttendanceStore,
@@ -8,7 +8,10 @@ import type {
   LicenceRow,
   LicencesStore,
   LicenceStateChangeRow,
+  LocationReading,
   MemberAppointment,
+  OffSiteFlagRow,
+  OffSiteStore,
 } from '../ports';
 
 /** In-memory stand-ins for this module's tables, used by every test. */
@@ -97,5 +100,30 @@ export class InMemoryAttendanceStore implements AttendanceStore {
 
   async all(): Promise<readonly AttendanceRow[]> {
     return [...this.rows];
+  }
+}
+
+export class InMemoryOffSiteStore implements OffSiteStore {
+  private readonly readings: LocationReading[] = [];
+  private readonly flags: OffSiteFlagRow[] = [];
+
+  async addReading(reading: LocationReading): Promise<void> {
+    this.readings.push(reading);
+  }
+
+  async readingsOf(attendanceId: string): Promise<readonly LocationReading[]> {
+    return this.readings.filter((reading) => reading.attendanceId === attendanceId);
+  }
+
+  async flagOf(attendanceId: string): Promise<OffSiteFlagRow | undefined> {
+    return this.flags.find((flag) => flag.attendanceId === attendanceId);
+  }
+
+  async addFlag(flag: OffSiteFlagRow): Promise<void> {
+    this.flags.push(flag);
+  }
+
+  async flagsIn(zoneId: ZoneId): Promise<readonly OffSiteFlagRow[]> {
+    return this.flags.filter((flag) => flag.zoneId === zoneId);
   }
 }

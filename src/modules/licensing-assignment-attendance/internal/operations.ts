@@ -1,5 +1,5 @@
 import { refuse, respond } from '../../../entrypoint/http';
-import type { Operation, WriteContext, WriteOperation, WriteOutcome } from '../../../entrypoint/operations/operation';
+import type { Operation, ReadOperation, WriteContext, WriteOperation, WriteOutcome } from '../../../entrypoint/operations/operation';
 import type { BodySchema, ValidBody } from '../../../entrypoint/operations/body-schema';
 import type { DistrictId, PersonId, Role } from '../../../shared/identifiers';
 import type { Result } from '../../../shared/result';
@@ -10,6 +10,10 @@ import type { AssignmentRefusal, ClockInRefusal, LicenceRefusal, LicensingAssign
  * The requests this module answers, for the composition root to register. The entry point writes the one audit entry
  * after a handler succeeds; the handler names the person the change is about, so that person can read the entry, and
  * the district, so its members can (ADR-10).
+ *
+ * Not registered yet: the attendant's location reading (task A14). The entry point copies the whole body into the
+ * permanent audit entry, so every reading's coordinates would stay in the audit log for ever, while this module keeps
+ * only the distance (question 3 for the foundation owner).
  */
 export function createLicensingOperations(module: LicensingAssignmentAttendance, registry: SiteRegistry): readonly Operation[] {
   const { assignments } = module;
@@ -59,6 +63,7 @@ export function createLicensingOperations(module: LicensingAssignmentAttendance,
     issueLicence(module, districtOfSite),
     clockIn(module, districtOfSite),
     clockOut(module, districtOfSite),
+    readOffSiteFlags(module),
     assignmentWrite({
       name: 'assignments.appointMember',
       path: '/assignments/members',
@@ -144,6 +149,21 @@ function clockOut(module: LicensingAssignmentAttendance, districtOfSite: (siteId
         return { response: refuse(409, clockedOut.error) };
       }
       return attendanceWritten({ siteId: clockedOut.value, clockedIn: false }, actor.personId, await districtOfSite(clockedOut.value));
+    },
+  };
+}
+
+/** The inspector's priority list: GET /attendance/off-site-flags?zoneId=… for someone with scope over the zone. */
+function readOffSiteFlags(module: LicensingAssignmentAttendance): ReadOperation {
+  return {
+    kind: 'read',
+    name: 'attendance.offSiteFlags',
+    method: 'GET',
+    path: '/attendance/off-site-flags',
+    allowedRoles: ['inspector', 'member', 'chair'],
+    async handle({ actor, query }) {
+      const flags = await module.attendance.offSiteFlags(actor.personId, query['zoneId'] ?? '');
+      return flags.ok ? respond(200, { flags: flags.value }) : refuse(403, flags.error);
     },
   };
 }

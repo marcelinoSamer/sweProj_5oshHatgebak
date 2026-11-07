@@ -189,3 +189,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS attendance_one_open_per_attendant ON licensing
   WHERE clocked_out_at IS NULL;
 
 GRANT SELECT, INSERT, UPDATE ON licensing_assignment_attendance.attendance TO sayes_application;
+
+-- Off-site readings and flags (task A14). A reading keeps only its distance from the site, never the coordinates
+-- (personal data is collected minimally, Law 151 of 2020). At most one flag per attendance.
+CREATE TABLE IF NOT EXISTS licensing_assignment_attendance.location_readings (
+  attendance_id   text NOT NULL REFERENCES licensing_assignment_attendance.attendance (attendance_id),
+  distance_meters integer NOT NULL CHECK (distance_meters >= 0),
+  recorded_at     timestamptz NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS location_readings_attendance_idx ON licensing_assignment_attendance.location_readings (attendance_id, recorded_at);
+
+CREATE TABLE IF NOT EXISTS licensing_assignment_attendance.off_site_flags (
+  flag_id       text PRIMARY KEY,
+  attendance_id text NOT NULL UNIQUE REFERENCES licensing_assignment_attendance.attendance (attendance_id),
+  attendant_id  text NOT NULL,
+  site_id       text NOT NULL,
+  zone_id       text NOT NULL,
+  raised_at     timestamptz NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS off_site_flags_zone_idx ON licensing_assignment_attendance.off_site_flags (zone_id, raised_at);
+
+GRANT SELECT, INSERT ON licensing_assignment_attendance.location_readings, licensing_assignment_attendance.off_site_flags TO sayes_application;

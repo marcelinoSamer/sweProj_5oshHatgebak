@@ -7,12 +7,17 @@ import type { Clock } from '../../shared/clock';
 import type { ApprovalRequestId, DistrictId, LicenceId, PersonId, SiteId, ZoneId } from '../../shared/identifiers';
 import type { Result } from '../../shared/result';
 import type { AccessFacts, Authorization, LicenceLiveState } from '../accounts-and-access-control/public';
-import type { SiteRegistry } from '../sites-and-areas/public';
-import { InMemoryAssignmentsStore, InMemoryAttendanceStore, InMemoryLicencesStore } from './internal/adapters/in-memory-stores';
+import type { GeoPoint, SiteRegistry } from '../sites-and-areas/public';
+import {
+  InMemoryAssignmentsStore,
+  InMemoryAttendanceStore,
+  InMemoryLicencesStore,
+  InMemoryOffSiteStore,
+} from './internal/adapters/in-memory-stores';
 import { AssignmentsService } from './internal/assignments-service';
 import { AttendanceService } from './internal/attendance-service';
 import { LicencesService } from './internal/licences-service';
-import type { AssignmentsStore, AttendanceStore, LicencesStore } from './internal/ports';
+import type { AssignmentsStore, AttendanceStore, LicencesStore, OffSiteStore } from './internal/ports';
 
 export type LicenceState = LicenceLiveState;
 
@@ -85,6 +90,15 @@ export interface Assignments {
 
 export type ClockInRefusal = 'wrong site' | 'forged code' | 'not assigned' | 'licence not live';
 export type ClockOutRefusal = 'not clocked in';
+export type LocationRefusal = 'not clocked in' | 'invalid point';
+
+/** A flag on the inspector's list: an attendant away from their site for a sustained part of a shift (task A14). */
+export interface OffSiteFlag {
+  readonly flagId: string;
+  readonly attendantId: PersonId;
+  readonly siteId: SiteId;
+  readonly raisedAt: string;
+}
 
 /**
  * Clock in and out by scanning the own site's code (task A13). Clock-in binds the attendant's session to the site in
@@ -94,12 +108,19 @@ export interface Attendance {
   clockIn(attendantId: PersonId, scannedSiteCode: string): Promise<Result<SiteId, ClockInRefusal>>;
   clockOut(attendantId: PersonId): Promise<Result<SiteId, ClockOutRefusal>>;
   isClockedIn(attendantId: PersonId): Promise<boolean>;
+  /** A reading from the phone during a shift; only its distance from the site is kept. At most one flag per shift. */
+  recordLocationPoint(attendantId: PersonId, point: GeoPoint): Promise<Result<{ flagRaised: boolean }, LocationRefusal>>;
+  offSiteFlags(actor: PersonId, zoneId: ZoneId): Promise<Result<readonly OffSiteFlag[], 'not allowed here'>>;
 }
+
+/** Three readings in a row more than 300 metres from the site raise the flag. */
+export { OFF_SITE_POLICY } from './internal/domain/off-site-rule';
 
 export interface LicensingAssignmentAttendanceStores {
   readonly assignments: AssignmentsStore;
   readonly licences: LicencesStore;
   readonly attendance: AttendanceStore;
+  readonly offSite: OffSiteStore;
 }
 
 export interface LicensingAssignmentAttendanceDependencies {
@@ -123,12 +144,24 @@ export function createLicensingAssignmentAttendance(dependencies: LicensingAssig
   return {
     assignments: new AssignmentsService({ assignments: stores.assignments, authorization, accessFacts, registry, clock }),
     licences: new LicencesService({ licences: stores.licences, assignments: stores.assignments, authorization, accessFacts, approvals, clock }),
-    attendance: new AttendanceService({ attendance: stores.attendance, assignments: stores.assignments, authorization, registry, clock }),
+    attendance: new AttendanceService({
+      attendance: stores.attendance,
+      offSite: stores.offSite,
+      assignments: stores.assignments,
+      authorization,
+      registry,
+      clock,
+    }),
   };
 }
 
 export function createInMemoryLicensingStores(): LicensingAssignmentAttendanceStores {
-  return { assignments: new InMemoryAssignmentsStore(), licences: new InMemoryLicencesStore(), attendance: new InMemoryAttendanceStore() };
+  return {
+    assignments: new InMemoryAssignmentsStore(),
+    licences: new InMemoryLicencesStore(),
+    attendance: new InMemoryAttendanceStore(),
+    offSite: new InMemoryOffSiteStore(),
+  };
 }
 
 export { createLicensingOperations } from './internal/operations';
