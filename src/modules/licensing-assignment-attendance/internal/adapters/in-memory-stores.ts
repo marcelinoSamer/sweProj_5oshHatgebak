@@ -1,5 +1,7 @@
 import type { LicenceId, PersonId } from '../../../../shared/identifiers';
 import type {
+  AttendanceRow,
+  AttendanceStore,
   AssignmentsStore,
   AttendantAssignment,
   InspectorAssignment,
@@ -70,5 +72,30 @@ export class InMemoryLicencesStore implements LicencesStore {
 
   async changesOf(licenceId: LicenceId): Promise<readonly LicenceStateChangeRow[]> {
     return this.changes.filter((change) => change.licenceId === licenceId);
+  }
+}
+
+export class InMemoryAttendanceStore implements AttendanceStore {
+  private readonly rows: AttendanceRow[] = [];
+
+  async open(attendantId: PersonId): Promise<AttendanceRow | undefined> {
+    return this.rows.find((row) => row.attendantId === attendantId && row.clockedOutAt === undefined);
+  }
+
+  async add(row: AttendanceRow): Promise<void> {
+    this.rows.push(row);
+  }
+
+  async close(attendanceId: string, clockedOutAt: string): Promise<void> {
+    const index = this.rows.findIndex((row) => row.attendanceId === attendanceId);
+    const row = this.rows[index];
+    if (row === undefined) {
+      throw new Error(`No attendance with the id ${attendanceId}`);
+    }
+    this.rows[index] = { ...row, clockedOutAt };
+  }
+
+  async all(): Promise<readonly AttendanceRow[]> {
+    return [...this.rows];
   }
 }

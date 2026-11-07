@@ -59,3 +59,21 @@ export interface LicencesStore {
   appendChange(change: LicenceStateChangeRow): Promise<void>;
   changesOf(licenceId: LicenceId): Promise<readonly LicenceStateChangeRow[]>;
 }
+
+/** One row of `licensing_assignment_attendance.attendance`: one clock-in, closed by its clock-out. */
+export interface AttendanceRow {
+  readonly attendanceId: string;
+  readonly attendantId: PersonId;
+  readonly siteId: SiteId;
+  readonly shiftId: string;
+  /** Both set from the server clock (Rule I). */
+  readonly clockedInAt: string;
+  readonly clockedOutAt?: string;
+}
+
+export interface AttendanceStore {
+  open(attendantId: PersonId): Promise<AttendanceRow | undefined>;
+  add(row: AttendanceRow): Promise<void>;
+  close(attendanceId: string, clockedOutAt: string): Promise<void>;
+  all(): Promise<readonly AttendanceRow[]>;
+}

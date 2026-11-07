@@ -67,4 +67,17 @@ describe('A12 through the entry point', () => {
     const asAttendant = await application.audit.readByScope({ personId: attendant, role: 'attendant' });
     expect(asAttendant.map((entry) => entry.operation)).toEqual(['licences.issue']);
   });
+
+  it('clocks an attendant in and out by scanning their site\'s code, each with one audit entry', async () => {
+    const attendant = await createPerson(world, 'attendant');
+    await world.licensing.assignments.assignAttendantToSite(world.chair, attendant, world.siteOne, 'morning');
+    await world.licensing.licences.issueLicence(world.chair, attendant);
+    const { entryCode } = await world.registry.issueEntryAndExitCodes(world.siteOne);
+    const wrongSite = await application.handle(post('/attendance/clock-in', attendant, 'attendant', { siteCode: (await world.registry.issueEntryAndExitCodes(world.siteTwo)).entryCode }));
+    expect(wrongSite).toEqual({ status: 403, body: { error: 'wrong site' } });
+    expect((await application.handle(post('/attendance/clock-in', attendant, 'attendant', { siteCode: entryCode }))).status).toBe(200);
+    expect((await application.handle(post('/attendance/clock-out', attendant, 'attendant', {}))).status).toBe(200);
+    const entries = await application.audit.readByScope({ personId: attendant, role: 'attendant' });
+    expect(entries.map((entry) => entry.operation)).toEqual(['attendance.clockIn', 'attendance.clockOut']);
+  });
 });

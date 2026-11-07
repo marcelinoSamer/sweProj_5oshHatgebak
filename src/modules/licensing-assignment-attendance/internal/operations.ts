@@ -4,7 +4,7 @@ import type { BodySchema, ValidBody } from '../../../entrypoint/operations/body-
 import type { DistrictId, PersonId, Role } from '../../../shared/identifiers';
 import type { Result } from '../../../shared/result';
 import type { SiteRegistry } from '../../sites-and-areas/public';
-import type { AssignmentRefusal, LicenceRefusal, LicensingAssignmentAttendance } from '../public';
+import type { AssignmentRefusal, ClockInRefusal, LicenceRefusal, LicensingAssignmentAttendance } from '../public';
 
 /**
  * The requests this module answers, for the composition root to register. The entry point writes the one audit entry
@@ -57,6 +57,8 @@ export function createLicensingOperations(module: LicensingAssignmentAttendance,
       district: ({ body }) => districtOfZone(body['zoneId']),
     }),
     issueLicence(module, districtOfSite),
+    clockIn(module, districtOfSite),
+    clockOut(module, districtOfSite),
     assignmentWrite({
       name: 'assignments.appointMember',
       path: '/assignments/members',
@@ -105,6 +107,59 @@ const LICENCE_REFUSAL_STATUS: Readonly<Record<LicenceRefusal, number>> = {
   'already licensed': 409,
   'not an attendant': 400,
   'not allowed here': 403,
+};
+
+/** The attendant scans the code printed at their own site; the token says who they are, the code where they stand. */
+function clockIn(module: LicensingAssignmentAttendance, districtOfSite: (siteId: unknown) => Promise<DistrictId | undefined>): WriteOperation {
+  return {
+    kind: 'write',
+    name: 'attendance.clockIn',
+    method: 'POST',
+    path: '/attendance/clock-in',
+    allowedRoles: ['attendant'],
+    bodySchema: { fields: { siteCode: 'string' } },
+    examples: { valid: { siteCode: 'SAYES1.entry.c2l0ZS0x.signature' }, invalid: {} },
+    async handle({ actor, body }) {
+      const clockedIn = await module.attendance.clockIn(actor.personId, String(body['siteCode']));
+      if (!clockedIn.ok) {
+        return { response: refuse(CLOCK_IN_REFUSAL_STATUS[clockedIn.error], clockedIn.error) };
+      }
+      return attendanceWritten({ siteId: clockedIn.value, clockedIn: true }, actor.personId, await districtOfSite(clockedIn.value));
+    },
+  };
+}
+
+function clockOut(module: LicensingAssignmentAttendance, districtOfSite: (siteId: unknown) => Promise<DistrictId | undefined>): WriteOperation {
+  return {
+    kind: 'write',
+    name: 'attendance.clockOut',
+    method: 'POST',
+    path: '/attendance/clock-out',
+    allowedRoles: ['attendant'],
+    bodySchema: { fields: {} },
+    examples: { valid: {}, invalid: { siteCode: 'not part of a clock-out' } },
+    async handle({ actor }) {
+      const clockedOut = await module.attendance.clockOut(actor.personId);
+      if (!clockedOut.ok) {
+        return { response: refuse(409, clockedOut.error) };
+      }
+      return attendanceWritten({ siteId: clockedOut.value, clockedIn: false }, actor.personId, await districtOfSite(clockedOut.value));
+    },
+  };
+}
+
+function attendanceWritten(body: unknown, attendantId: PersonId, districtId: DistrictId | undefined): WriteOutcome {
+  return {
+    response: respond(200, body),
+    audit: districtId === undefined ? { subjectPersonIds: [attendantId] } : { subjectPersonIds: [attendantId], districtId },
+  };
+}
+
+const CLOCK_IN_REFUSAL_STATUS: Readonly<Record<ClockInRefusal, number>> = {
+  'wrong site': 403,
+  'forged code': 400,
+  'not assigned': 409,
+  'licence not live': 403,
 };
 
 interface AssignmentWriteSpec {

@@ -247,6 +247,11 @@ export class SiteRegistryService implements SiteRegistry {
     return statusAt(moment, weeklyHours, events);
   }
 
+  async distanceFromSite(siteId: SiteId, point: GeoPoint): Promise<number | undefined> {
+    const site = await this.dependencies.places.site(siteId);
+    return site === undefined || !isRealPoint(point) ? undefined : distanceInMeters(centreOf(site.outline), point);
+  }
+
   async nearbySites(from: GeoPoint, radiusMeters: number): Promise<Result<readonly NearbySite[], NearbyRefusal>> {
     if (!isRealPoint(from)) {
       return fail('invalid point');

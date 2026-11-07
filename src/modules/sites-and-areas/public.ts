@@ -147,6 +147,8 @@ export interface SiteRegistry extends SiteCodes, SiteLocator {
   isOpenAt(siteId: SiteId, moment: Date): Promise<boolean>;
   /** undefined for an unknown site. */
   statusAt(siteId: SiteId, moment: Date): Promise<SiteStatus | undefined>;
+  /** Metres from the site's centre to a point; undefined for an unknown site. */
+  distanceFromSite(siteId: SiteId, point: GeoPoint): Promise<number | undefined>;
   /** Sites whose centre lies within the radius (up to 20 km), nearest first, with fee and band as of the server clock. */
   nearbySites(from: GeoPoint, radiusMeters: number): Promise<Result<readonly NearbySite[], NearbyRefusal>>;
   districtExists(districtId: DistrictId): Promise<boolean>;

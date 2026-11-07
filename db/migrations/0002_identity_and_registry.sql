@@ -173,3 +173,19 @@ CREATE TABLE IF NOT EXISTS licensing_assignment_attendance.licence_state_changes
 );
 
 GRANT SELECT, INSERT ON licensing_assignment_attendance.licences, licensing_assignment_attendance.licence_state_changes TO sayes_application;
+
+-- Attendance (task A13): one row per clock-in, closed by its clock-out. Both times come from the server clock.
+CREATE TABLE IF NOT EXISTS licensing_assignment_attendance.attendance (
+  attendance_id  text PRIMARY KEY,
+  attendant_id   text NOT NULL,
+  site_id        text NOT NULL,
+  shift_id       text NOT NULL,
+  clocked_in_at  timestamptz NOT NULL,
+  clocked_out_at timestamptz,
+  CHECK (clocked_out_at IS NULL OR clocked_out_at >= clocked_in_at)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS attendance_one_open_per_attendant ON licensing_assignment_attendance.attendance (attendant_id)
+  WHERE clocked_out_at IS NULL;
+
+GRANT SELECT, INSERT, UPDATE ON licensing_assignment_attendance.attendance TO sayes_application;
