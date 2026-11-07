@@ -3,9 +3,17 @@
  * Payment records (app and cash), corrections as new rows, one charge per request id. Needs TicketDesk, AuditTrail
  * and the PaymentGateway port.
  */
+import type { Operation } from '../../entrypoint/operations/operation';
+import type { Clock } from '../../shared/clock';
+import type { EventPublisher } from '../../shared/events/event';
 import type { PaymentId, PersonId, SiteId, TicketId } from '../../shared/identifiers';
 import type { RequestId } from '../../shared/request-id';
 import type { Result } from '../../shared/result';
+import type { UnitOfWork } from '../../shared/unit-of-work';
+import type { TicketDesk, TicketQuery } from '../ticketing/public';
+import { payInAppOperation } from './internal/operations/pay-in-app';
+import { PaymentLedgerService } from './internal/payment-ledger';
+import type { PaymentStores } from './internal/ports';
 
 export type ChargeOutcome = 'paid' | 'declined' | 'pending' | 'timed out';
 
@@ -34,9 +42,15 @@ export interface PaymentRecord {
   readonly method: 'app' | 'cash' | 'correction';
   readonly outcome: ChargeOutcome;
   readonly reason?: string;
+  /** The provider's reference for an app payment; absent for cash and corrections. */
+  readonly providerReference?: string;
 }
 
-export type PayRefusal = 'declined' | 'pay later or pay cash' | 'ticket not closed';
+/**
+ * Why a pay in the app was refused. The first three come from the task sheet; "nothing to pay" (the ticket is
+ * already paid or waived) and "not your ticket" keep one ticket from being charged twice or by a stranger.
+ */
+export type PayRefusal = 'declined' | 'pay later or pay cash' | 'ticket not closed' | 'nothing to pay' | 'not your ticket';
 
 export interface PaymentLedger {
   payInApp(requestId: RequestId, ticketId: TicketId, payer: PersonId): Promise<Result<PaymentRecord, PayRefusal>>;
@@ -46,3 +60,29 @@ export interface PaymentLedger {
   cashDueForShift(attendantId: PersonId, siteId: SiteId, shiftId: string): Promise<number>;
   paymentsForTicket(ticketId: TicketId): Promise<readonly PaymentRecord[]>;
 }
+
+export interface PaymentsDependencies {
+  readonly gateway: PaymentGateway;
+  readonly ticketDesk: TicketDesk;
+  readonly ticketQuery: TicketQuery;
+  readonly clock: Clock;
+  readonly stores: PaymentStores;
+}
+
+export interface Payments {
+  /** The ledger joined to one write's unit of work, so its rows and events commit with the audit entry (Rule E). */
+  ledgerBoundTo(unitOfWork: UnitOfWork, events: EventPublisher): PaymentLedger;
+  /** The operations this module registers with the entry point. */
+  readonly operations: readonly Operation[];
+}
+
+/** The composition root builds this module through this one function; nothing else constructs its internals. */
+export function createPayments(dependencies: PaymentsDependencies): Payments {
+  const ledgerBoundTo: Payments['ledgerBoundTo'] = (unitOfWork, events) =>
+    new PaymentLedgerService(dependencies, dependencies.stores.boundTo(unitOfWork), events);
+  return { ledgerBoundTo, operations: [payInAppOperation({ ledgerBoundTo })] };
+}
+
+export type { PaymentStores } from './internal/ports';
+export { createInMemoryPaymentStores, PAYMENTS_TABLE } from './internal/adapters/in-memory-payment-store';
+export { PROVIDER_TIMEOUT_MILLISECONDS, TICKET_PAID_TOPIC, type TicketPaidPayload } from './internal/payment-ledger';
