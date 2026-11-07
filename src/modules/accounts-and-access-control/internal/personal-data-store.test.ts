@@ -3,9 +3,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { f10PersonalDataColumnsStayInTheirSchema, PERSONAL_DATA_SCHEMA } from '../../../fitness/f10-personal-data-columns-stay-in-their-schema';
 import { columnsDeclaredIn } from '../../../fitness/support/sql-columns';
-import { createAccountsAndAccessControl, createInMemoryAccountsStores, type SiteLocator } from '../public';
-
-const NO_SITES: SiteLocator = { locateSite: async () => undefined, locateZone: async () => undefined };
+import { createAccountsWorld } from './testing/accounts-world';
 
 /** Task A2: names, phones, plates and cars live only in the personal-data store; everything else holds a reference. */
 describe('A2 the personal-data store', () => {
@@ -27,8 +25,7 @@ describe('A2 the personal-data store', () => {
   });
 
   it('keeps the name and phone in the personal-data store and only a reference in the people table', async () => {
-    const stores = createInMemoryAccountsStores();
-    const accounts = createAccountsAndAccessControl({ stores, siteLocator: NO_SITES });
+    const { accounts, stores } = createAccountsWorld();
     const created = await accounts.personalData.createPerson('self registration', 'driver', '010 1234 5678', '  Mona   Adel ');
     if (!created.ok) {
       throw new Error(`expected the driver to be created, got ${created.error}`);
@@ -44,14 +41,14 @@ describe('A2 the personal-data store', () => {
   });
 
   it('refuses a second person with the same phone, whatever its spelling', async () => {
-    const accounts = createAccountsAndAccessControl({ stores: createInMemoryAccountsStores(), siteLocator: NO_SITES });
+    const { accounts } = createAccountsWorld();
     await accounts.personalData.createPerson('self registration', 'driver', '01012345678', 'Mona Adel');
     const again = await accounts.personalData.createPerson('self registration', 'driver', '+20 101 234 5678', 'Someone Else');
     expect(again).toEqual({ ok: false, error: 'phone already registered' });
   });
 
   it('refuses a phone that is not an Egyptian mobile number and an empty name', async () => {
-    const accounts = createAccountsAndAccessControl({ stores: createInMemoryAccountsStores(), siteLocator: NO_SITES });
+    const { accounts } = createAccountsWorld();
     expect(await accounts.personalData.createPerson('self registration', 'driver', '12345', 'Mona Adel')).toEqual({ ok: false, error: 'invalid phone' });
     expect(await accounts.personalData.createPerson('self registration', 'driver', '01012345678', '   ')).toEqual({ ok: false, error: 'invalid name' });
   });
@@ -59,7 +56,7 @@ describe('A2 the personal-data store', () => {
 
 describe('A1 who may create whom', () => {
   it('lets a driver register themself but nobody register themself as staff', async () => {
-    const accounts = createAccountsAndAccessControl({ stores: createInMemoryAccountsStores(), siteLocator: NO_SITES });
+    const { accounts } = createAccountsWorld();
     expect((await accounts.personalData.createPerson('self registration', 'driver', '01011111111', 'Driver')).ok).toBe(true);
     expect(await accounts.personalData.createPerson('self registration', 'attendant', '01022222222', 'Attendant')).toEqual({
       ok: false,
@@ -68,7 +65,7 @@ describe('A1 who may create whom', () => {
   });
 
   it('follows the hierarchy: the Chair creates members, a member creates attendants but not members', async () => {
-    const accounts = createAccountsAndAccessControl({ stores: createInMemoryAccountsStores(), siteLocator: NO_SITES });
+    const { accounts } = createAccountsWorld();
     const chair = await accounts.bootstrapChair('01000000000', 'The Chair');
     if (!chair.ok) {
       throw new Error(chair.error);

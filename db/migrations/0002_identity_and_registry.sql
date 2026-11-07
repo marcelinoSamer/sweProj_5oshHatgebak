@@ -45,6 +45,18 @@ CREATE TABLE IF NOT EXISTS accounts_and_access_control.access_facts (
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON accounts_and_access_control.access_facts TO sayes_application;
 
+-- The one outstanding sign-in code of each person, kept only as a hash, with the wrong-code count and the lock-out
+-- (task A1). Times come from the server clock.
+CREATE TABLE IF NOT EXISTS accounts_and_access_control.sign_in_challenges (
+  person_id       text PRIMARY KEY REFERENCES accounts_and_access_control.people (person_id),
+  code_hash       char(64) NOT NULL,
+  expires_at      timestamptz NOT NULL,
+  failed_attempts integer NOT NULL DEFAULT 0,
+  locked_until    timestamptz
+);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON accounts_and_access_control.sign_in_challenges TO sayes_application;
+
 -- Districts, zones and sites (task A6). "label" rather than "name": names are personal data (fitness function F10).
 CREATE TABLE IF NOT EXISTS sites_and_areas.districts (
   district_id text PRIMARY KEY,

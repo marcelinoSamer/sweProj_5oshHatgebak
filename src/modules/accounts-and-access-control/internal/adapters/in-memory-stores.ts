@@ -1,7 +1,17 @@
 import type { PersonId } from '../../../../shared/identifiers';
 import type { AccountStatus, CarRef } from '../../public';
 import type { Person } from '../domain/person';
-import type { AccessFactsRow, AccessFactsStore, CarRecord, ErasedRows, PeopleStore, PersonalDataStore, PersonDetails } from '../ports';
+import type {
+  AccessFactsRow,
+  AccessFactsStore,
+  CarRecord,
+  ErasedRows,
+  PeopleStore,
+  PersonalDataStore,
+  PersonDetails,
+  SignInChallenge,
+  SignInChallengeStore,
+} from '../ports';
 
 /**
  * In-memory stand-ins for this module's tables. They keep their own maps rather than the foundation's
@@ -88,5 +98,21 @@ export class InMemoryAccessFactsStore implements AccessFactsStore {
 
   async remove(personId: PersonId): Promise<number> {
     return this.facts.delete(personId) ? 1 : 0;
+  }
+}
+
+export class InMemorySignInChallengeStore implements SignInChallengeStore {
+  private readonly challenges = new Map<PersonId, SignInChallenge>();
+
+  async find(personId: PersonId): Promise<SignInChallenge | undefined> {
+    return this.challenges.get(personId);
+  }
+
+  async save(challenge: SignInChallenge): Promise<void> {
+    this.challenges.set(challenge.personId, challenge);
+  }
+
+  async remove(personId: PersonId): Promise<number> {
+    return this.challenges.delete(personId) ? 1 : 0;
   }
 }

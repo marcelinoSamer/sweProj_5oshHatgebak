@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { PersonId, Role } from '../../../shared/identifiers';
 import {
-  createAccountsAndAccessControl,
-  createInMemoryAccountsStores,
   SCOPE_RULE_DESCRIPTIONS,
   type AccountsAndAccessControl,
   type AccountsAndAccessControlStores,
   type SiteLocator,
 } from '../public';
+import { createAccountsWorld } from './testing/accounts-world';
 
 /** Two zones in district 1 and one zone in district 2, one site in each. */
 const ZONES: Readonly<Record<string, string>> = { 'zone-3': 'district-1', 'zone-4': 'district-1', 'zone-9': 'district-2' };
@@ -53,8 +52,7 @@ async function createCast(): Promise<Cast> {
 }
 
 beforeEach(async () => {
-  stores = createInMemoryAccountsStores();
-  accounts = createAccountsAndAccessControl({ stores, siteLocator });
+  ({ stores, accounts } = createAccountsWorld(siteLocator));
   cast = await createCast();
 });
 

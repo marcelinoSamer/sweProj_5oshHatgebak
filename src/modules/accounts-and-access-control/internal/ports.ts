@@ -66,3 +66,22 @@ export interface AccessFactsStore {
   update(personId: PersonId, change: (current: AccessFactsRow) => AccessFactsRow): Promise<void>;
   remove(personId: PersonId): Promise<number>;
 }
+
+/**
+ * One outstanding one-time code for one person (task A1). Only the code's hash is kept. Times come from the server
+ * clock. A lock-out survives a new code request until it ends.
+ */
+export interface SignInChallenge {
+  readonly personId: PersonId;
+  readonly codeHash: string;
+  readonly expiresAt: string;
+  readonly failedAttempts: number;
+  readonly lockedUntil?: string;
+}
+
+/** The `accounts_and_access_control.sign_in_challenges` table: at most one row per person. */
+export interface SignInChallengeStore {
+  find(personId: PersonId): Promise<SignInChallenge | undefined>;
+  save(challenge: SignInChallenge): Promise<void>;
+  remove(personId: PersonId): Promise<number>;
+}

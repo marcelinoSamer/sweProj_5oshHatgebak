@@ -1,4 +1,11 @@
-import { createAccountsAndAccessControl, createInMemoryAccountsStores, type AccountsAndAccessControl } from '../../../accounts-and-access-control/public';
+import { signToken } from '../../../../entrypoint/auth/token';
+import { TEST_TOKEN_SECRET } from '../../../../entrypoint/test-helpers';
+import {
+  createAccountsAndAccessControl,
+  createInMemoryAccountsStores,
+  RecordingSignInCodeSender,
+  type AccountsAndAccessControl,
+} from '../../../accounts-and-access-control/public';
 import { FixedClock } from '../../../../shared/clock';
 import type { PersonId, Role } from '../../../../shared/identifiers';
 import type { Result } from '../../../../shared/result';
@@ -25,7 +32,13 @@ export interface RegistryWorld {
 export async function createRegistryWorld(): Promise<RegistryWorld> {
   const clock = new FixedClock(TEST_START);
   const sitesStores = createInMemorySitesStores();
-  const accounts = createAccountsAndAccessControl({ stores: createInMemoryAccountsStores(), siteLocator: createSiteLocator(sitesStores) });
+  const accounts = createAccountsAndAccessControl({
+    stores: createInMemoryAccountsStores(),
+    siteLocator: createSiteLocator(sitesStores),
+    signInCodeSender: new RecordingSignInCodeSender(),
+    tokenIssuer: { issue: (actor) => signToken(actor, TEST_TOKEN_SECRET) },
+    clock,
+  });
   const registry = createSiteRegistry({ stores: sitesStores, authorization: accounts.authorization, siteCodeSecret: TEST_SITE_CODE_SECRET, clock });
   const chair = valueOf(await accounts.bootstrapChair('01000000000', 'The Chair'));
   return { clock, accounts, sitesStores, registry, chair };
