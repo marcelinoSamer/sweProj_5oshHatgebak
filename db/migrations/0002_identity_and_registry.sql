@@ -44,3 +44,37 @@ CREATE TABLE IF NOT EXISTS accounts_and_access_control.access_facts (
 );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON accounts_and_access_control.access_facts TO sayes_application;
+
+-- Districts, zones and sites (task A6). "label" rather than "name": names are personal data (fitness function F10).
+CREATE TABLE IF NOT EXISTS sites_and_areas.districts (
+  district_id text PRIMARY KEY,
+  label       text NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sites_and_areas.zones (
+  zone_id     text PRIMARY KEY,
+  district_id text NOT NULL REFERENCES sites_and_areas.districts (district_id),
+  label       text NOT NULL
+);
+
+-- The outline is a JSON array of { latitude, longitude } points. Capacity lives in capacity_changes, never here.
+CREATE TABLE IF NOT EXISTS sites_and_areas.sites (
+  site_id text PRIMARY KEY,
+  zone_id text NOT NULL REFERENCES sites_and_areas.zones (zone_id),
+  label   text NOT NULL,
+  outline jsonb NOT NULL
+);
+
+-- Every capacity a site has ever had, with the reason and the server time (task A8). Insert-only: the latest row is
+-- the current capacity.
+CREATE TABLE IF NOT EXISTS sites_and_areas.capacity_changes (
+  site_id    text NOT NULL REFERENCES sites_and_areas.sites (site_id),
+  capacity   integer NOT NULL CHECK (capacity BETWEEN 1 AND 10000),
+  reason     text NOT NULL CHECK (length(trim(reason)) > 0),
+  changed_by text NOT NULL,
+  changed_at timestamptz NOT NULL,
+  PRIMARY KEY (site_id, changed_at)
+);
+
+GRANT SELECT, INSERT, UPDATE ON sites_and_areas.districts, sites_and_areas.zones, sites_and_areas.sites TO sayes_application;
+GRANT SELECT, INSERT ON sites_and_areas.capacity_changes TO sayes_application;
